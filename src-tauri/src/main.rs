@@ -53,12 +53,12 @@ fn main() {
             }
             _ => {}
         })
-        .build(tauri::generate_context!())
+        .run(tauri::generate_context!())
         .expect("error while running tauri application")
-        .run(|_app_handle, event| match event {
-            tauri::RunEvent::ExitRequested { api, .. } => {
-                api.prevent_exit();
-            }
-            _ => {}
-        });
+        // .run(|_app_handle, event| match event {
+        //     tauri::RunEvent::ExitRequested { api, .. } => {
+        //         api.prevent_exit();
+        //     }
+        //     _ => {}
+        // });
 }

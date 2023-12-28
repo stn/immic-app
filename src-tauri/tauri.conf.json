@@ -15,6 +15,15 @@
       "shell": {
         "all": false,
         "open": true
+      },
+      "notification": {
+        "all": true
+      },
+      "process": {
+        "exit": true
+      },
+      "window": {
+        "create": true
       }
     },
     "bundle": {
