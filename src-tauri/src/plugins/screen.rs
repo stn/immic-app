@@ -1,5 +1,4 @@
-
-use async_cron_scheduler::{Job, JobId, Scheduler};
+use async_cron_scheduler::{Job, Scheduler};
 use chrono::offset::Local;
 use std::sync::Mutex;
 
@@ -19,14 +18,15 @@ impl ScreenshotPlugin {
         let mut scheduler = self.scheduler.lock().unwrap();
 
         let job = Job::cron("0 * * * * *").unwrap();
-        sched.insert(job, |id| println!("Job!"));
+        sched.insert(job, |_id| take_screenshot());
 
         scheduler.replace(sched);
         tauri::async_runtime::spawn(sched_service);
     }
 }
 
-pub fn take_screenshot() {
+fn take_screenshot() {
+    println!("screenshot");
     let screens = Screen::all().unwrap();
 
     for screen in screens {
