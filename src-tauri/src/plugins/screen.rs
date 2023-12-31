@@ -1,27 +1,23 @@
-use async_cron_scheduler::{Job, Scheduler};
-use chrono::offset::Local;
+use async_cron_scheduler::{Job, JobId};
 use std::sync::Mutex;
-
 use screenshots::Screen;
+use tauri::{App, Manager, State};
+
+use crate::app::scheduler::AppScheduler;
 
 pub struct ScreenshotPlugin {
-    scheduler: Mutex<Option<Scheduler<Local>>>,
+    job_id: Option<JobId>,
 }
 impl ScreenshotPlugin {
     pub fn new() -> Self {
         Self {
-            scheduler: Mutex::new(None),
+            job_id: None,
         }
     }
-    pub fn start(&self) {
-        let (mut sched, sched_service) = Scheduler::<Local>::launch(tokio::time::sleep);
-        let mut scheduler = self.scheduler.lock().unwrap();
-
+    pub fn start(&mut self, app: &App) {
+        let scheduler: State<Mutex<AppScheduler>> = app.state();
         let job = Job::cron("0 * * * * *").unwrap();
-        sched.insert(job, |_id| take_screenshot());
-
-        scheduler.replace(sched);
-        tauri::async_runtime::spawn(sched_service);
+        self.job_id = scheduler.lock().unwrap().insert(job, |_id| take_screenshot());
     }
 }
 

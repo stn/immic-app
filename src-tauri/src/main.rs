@@ -4,7 +4,9 @@
 mod app;
 mod plugins;
 
+use std::sync::Mutex;
 use app::tray;
+use app::scheduler::AppScheduler;
 
 use tauri::{Manager, State};
 use crate::plugins::screen::ScreenshotPlugin;
@@ -22,10 +24,17 @@ fn main() {
 
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![greet])
-        .manage(ScreenshotPlugin::new())
+        .manage(Mutex::new(AppScheduler::new()))
+        .manage(Mutex::new(ScreenshotPlugin::new()))
         .setup(|app| {
-            let sched: State<ScreenshotPlugin> = app.state();
-            sched.start();
+            {
+                let scheduler: State<Mutex<AppScheduler>> = app.state();
+                scheduler.lock().unwrap().start();
+            }
+            {
+                let screenshot: State<Mutex<ScreenshotPlugin>> = app.state();
+                screenshot.lock().unwrap().start(app);
+            }
             Ok(())
         })
         .system_tray(tray::generate_system_tray())
