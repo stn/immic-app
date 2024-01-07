@@ -7,8 +7,10 @@ mod plugins;
 use std::sync::Mutex;
 use app::tray;
 use app::scheduler::AppScheduler;
+use app::setting::Setting;
 
 use tauri::{Manager, State};
+
 use crate::plugins::screen::ScreenshotPlugin;
 
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
@@ -23,10 +25,14 @@ fn main() {
     std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--ignore-gpu-blocklist");
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_store::Builder::default().build())
         .invoke_handler(tauri::generate_handler![greet])
         .manage(Mutex::new(AppScheduler::new()))
         .manage(Mutex::new(ScreenshotPlugin::new()))
         .setup(|app| {
+            {
+                app.manage(Mutex::new(Setting::new(app)));
+            }
             {
                 let scheduler: State<Mutex<AppScheduler>> = app.state();
                 scheduler.lock().unwrap().start();
