@@ -1,5 +1,6 @@
+use serde_json::Value;
 use tauri::{App, AppHandle, Wry};
-use tauri_plugin_store::{Store, StoreBuilder};
+use tauri_plugin_store::{Error, JsonValue, Store, StoreBuilder};
 
 pub struct Setting {
     app: AppHandle,
@@ -19,7 +20,19 @@ impl Setting {
         }
     }
 
-    // pub fn get(key: &str) -> Option<Value> {
-    //
-    // }
+    pub fn insert(&mut self, key: String, value: JsonValue) -> Result<(), Error> {
+        self.store.insert(key, value)
+    }
+
+    pub fn get(&self, key: impl AsRef<str>) -> Option<&Value> {
+        self.store.get(key)
+    }
+
+    pub fn has(&self, key: impl AsRef<str>) -> bool {
+        self.store.has(key)
+    }
+
+    pub fn delete(&mut self, key: impl AsRef<str>) -> Result<bool, Error> {
+        self.store.delete(key)
+    }
 }

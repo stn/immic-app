@@ -1,4 +1,7 @@
 use async_cron_scheduler::{Job, JobId};
+use chrono::Local;
+use std::fmt::Debug;
+use std::path::Path;
 use std::sync::Mutex;
 use screenshots::Screen;
 use tauri::{App, Manager, State};
@@ -27,8 +30,9 @@ fn take_screenshot() {
 
     for screen in screens {
         let image = screen.capture().unwrap();
-        image
-            .save(format!("ss-{}.png", screen.display_info.id))
-            .unwrap();
+        let dt = Local::now();
+        let filename = format!("ss-{}-{}.png", dt.format("%Y%m%d-%H%M%S"), screen.display_info.id);
+        let path = Path::new(r"F:\immic-dev").join("screen").join(filename);
+        image.save(path).unwrap();
     }
 }
