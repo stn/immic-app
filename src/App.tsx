@@ -7,6 +7,8 @@ function App() {
   const [greetMsg, setGreetMsg] = useState("");
   const [name, setName] = useState("");
   const [dates, setDates] = useState<string[]>([]);
+  const [date, setDate] = useState<string>('');
+  const [screens, setScreens] = useState<string[]>([]);
 
   async function greet() {
     // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
@@ -15,6 +17,10 @@ function App() {
 
   async function listDates() {
     setDates(await invoke("list_dates"));
+  }
+
+  async function listScreens(date: string) {
+    setScreens(await invoke("list_screens", { date }));
   }
 
   return (
@@ -54,7 +60,18 @@ function App() {
       <p>{greetMsg}</p>
       <div>
         {dates.map((date) => (
-          <p key={date}>{date}</p>
+          <button key={date} onClick={() => {
+            setDate(date);
+            listScreens(date);
+          }}>
+            {date}
+          </button>
+        ))}
+      </div>
+      <div>
+        {screens.map((screen) => (
+          // <div key={screen}>{screen}</div>
+          <img key={screen} src={'https://iss.localhost/' + date + '/' + screen} alt={screen} />
         ))}
       </div>
     </div>

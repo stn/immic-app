@@ -29,7 +29,12 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             greet,
             plugins::screen::list_dates,
+            plugins::screen::list_screens,
         ])
+        .register_uri_scheme_protocol(
+            "iss",
+             move |app, request| { plugins::screen::handle_iss_protocol(&app, &request) }
+            )
         .manage(Mutex::new(AppScheduler::new()))
         .manage(Mutex::new(ScreenshotPlugin::new()))
         .setup(|app| {

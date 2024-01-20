@@ -1,9 +1,12 @@
 use async_cron_scheduler::{Job, JobId};
 use chrono::Local;
+use std::error::Error;
+use std::fs;
 use std::path::Path;
 use std::sync::Mutex;
 use screenshots::Screen;
-use tauri::{App, Manager, State};
+use tauri::{App, AppHandle, Manager, State};
+use tauri::http;
 
 use crate::app::scheduler::AppScheduler;
 
@@ -50,6 +53,32 @@ fn take_screenshot() {
     }
 }
 
+pub fn handle_iss_protocol(_app: &AppHandle, request: &http::Request) -> Result<http::Response, Box<dyn Error>> {
+    // let screenshot: State<Mutex<ScreenshotPlugin>> = app.state();
+    // let mut screenshot = screenshot.lock().unwrap();
+    let uri = request.uri();
+    // split the uri into date directory and filename
+    // skip the first 16 characters: iss://localhost/
+    let mut parts = uri[16..].split('/');
+    let date = parts.next().unwrap();
+    let filename = parts.next().unwrap();
+    let base_dir = Path::new(r"F:\immic-dev");
+    let screen_dir = base_dir.join("screen");
+    let date_dir = screen_dir.join(date);
+    let path = date_dir.join(filename);
+    if path.exists() {
+        let builder = http::ResponseBuilder::new();
+        let response = if let Ok(data) = fs::read(path) {
+            builder.status(200).mimetype("image/png").body(data).unwrap()
+        } else {
+            builder.status(404).body(Vec::new()).unwrap()
+        };
+        Ok(response)
+    } else {
+        Err("Not found".into())
+    }
+}
+
 #[tauri::command]
 pub fn list_dates() -> Result<Vec<String>, String> {
     // List all screenshot dates
@@ -67,4 +96,24 @@ pub fn list_dates() -> Result<Vec<String>, String> {
         }
     }
     Ok(dates)
+}
+
+#[tauri::command]
+pub fn list_screens(date: &str) -> Result<Vec<String>, String> {
+    // List all screenshots in a date
+    let base_dir = Path::new(r"F:\immic-dev");
+    let screen_dir = base_dir.join("screen");
+    let date_dir = screen_dir.join(date);
+    let mut screenshots = vec![];
+    if date_dir.exists() {
+        let paths = std::fs::read_dir(date_dir).unwrap();
+        for path in paths {
+            let path = path.unwrap().path();
+            if path.is_file() {
+                let filename = path.file_name().unwrap().to_str().unwrap().to_string();
+                screenshots.push(filename);
+            }
+        }
+    }
+    Ok(screenshots)
 }
