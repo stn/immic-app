@@ -1,5 +1,6 @@
 use async_cron_scheduler::{Job, JobId};
 use chrono::Local;
+use regex::Regex;
 use std::error::Error;
 use std::fs;
 use std::path::Path;
@@ -47,7 +48,7 @@ fn take_screenshot() {
         if !date_dir.exists() {
             std::fs::create_dir(&date_dir).unwrap();
         }
-        let filename = format!("ss-{}-{}.png", dt.format("%H%M%S"), screen.display_info.id);
+        let filename = format!("{}-{}.png", dt.format("%H%M%S"), screen.display_info.id);
         let path = date_dir.join(filename);
         image.save(path).unwrap();
     }
@@ -57,6 +58,10 @@ pub fn handle_iss_protocol(_app: &AppHandle, request: &http::Request) -> Result<
     // let screenshot: State<Mutex<ScreenshotPlugin>> = app.state();
     // let mut screenshot = screenshot.lock().unwrap();
     let uri = request.uri();
+    if !check_iss_uri(uri) {
+        return Err("Invalid uri".into());
+    }
+
     // split the uri into date directory and filename
     // skip the first 16 characters: iss://localhost/
     let mut parts = uri[16..].split('/');
@@ -78,6 +83,16 @@ pub fn handle_iss_protocol(_app: &AppHandle, request: &http::Request) -> Result<
         Err("Not found".into())
     }
 }
+
+fn check_iss_uri(uri: &str) -> bool {
+    let re = Regex::new(r"^iss://localhost/\d{8}/\d{6}-[A-Za-z0-9]*\.png$").unwrap();
+    if re.is_match(uri) {
+        return true;
+    }
+    print!("Invalid uri: {}", uri);
+    false
+}
+ 
 
 #[tauri::command]
 pub fn list_dates() -> Result<Vec<String>, String> {
@@ -106,14 +121,34 @@ pub fn list_screens(date: &str) -> Result<Vec<String>, String> {
     let date_dir = screen_dir.join(date);
     let mut screenshots = vec![];
     if date_dir.exists() {
+        let re = Regex::new(r"\d{6}-[A-Za-z0-9]*\.png$").unwrap();
         let paths = std::fs::read_dir(date_dir).unwrap();
         for path in paths {
             let path = path.unwrap().path();
             if path.is_file() {
                 let filename = path.file_name().unwrap().to_str().unwrap().to_string();
-                screenshots.push(filename);
+                if re.is_match(&filename) {
+                    screenshots.push(filename);
+                }
             }
         }
     }
     Ok(screenshots)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_check_iss_uri() {
+        assert!(check_iss_uri("iss://localhost/20210901/123456-abcdef.png"));
+        assert!(!check_iss_uri("iss://localhost/20210901/123456-abcdef.jpg"));
+        assert!(!check_iss_uri("iss://localhost/20210901/123456-abcdef"));
+        assert!(!check_iss_uri("iss://localhost/20210901/123456-abcdef.png/"));
+        assert!(!check_iss_uri("iss://localhost/20210901/123456-abcdef.png/abc"));
+        assert!(!check_iss_uri("iss://localhost/20210901/123456-abcdef.png/abc/"));
+        assert!(!check_iss_uri("iss://localhost//20210901/123456-abcdef.png"));
+        assert!(!check_iss_uri("iss://localhost/../20210901/123456-abcdef.png"));
+    }
 }
