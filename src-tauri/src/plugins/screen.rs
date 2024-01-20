@@ -1,5 +1,6 @@
 use async_cron_scheduler::{Job, JobId};
 use chrono::Local;
+use once_cell::sync::Lazy;
 use regex::Regex;
 use std::error::Error;
 use std::fs;
@@ -33,7 +34,7 @@ fn take_screenshot() {
     let screens = Screen::all().unwrap();
 
     for screen in screens {
-        let image = screen.capture().unwrap();
+        let mut image = screen.capture().unwrap();
         let dt = Local::now();
         // Create directories if not exists
         let base_dir = Path::new(r"F:\immic-dev");
@@ -48,9 +49,17 @@ fn take_screenshot() {
         if !date_dir.exists() {
             std::fs::create_dir(&date_dir).unwrap();
         }
-        let filename = format!("{}-{}.png", dt.format("%H%M%S"), screen.display_info.id);
+        let filename = format!("{}-{}.jpg", dt.format("%H%M%S"), screen.display_info.id);
         let path = date_dir.join(filename);
         image.save(path).unwrap();
+
+        // thumbnail
+        let width = image.width() / 8;
+        let height = image.height() / 8;
+        let thumb = image::imageops::thumbnail(&mut image, width, height);
+        thumb.save(date_dir.join(format!("{}-{}-t.jpg", dt.format("%H%M%S"), screen.display_info.id))).unwrap();
+
+        break; // save only the first screen for now
     }
 }
 
@@ -70,11 +79,11 @@ pub fn handle_iss_protocol(_app: &AppHandle, request: &http::Request) -> Result<
     let base_dir = Path::new(r"F:\immic-dev");
     let screen_dir = base_dir.join("screen");
     let date_dir = screen_dir.join(date);
-    let path = date_dir.join(filename);
+    let path = date_dir.join(format!("{}.jpg", filename));
     if path.exists() {
         let builder = http::ResponseBuilder::new();
         let response = if let Ok(data) = fs::read(path) {
-            builder.status(200).mimetype("image/png").body(data).unwrap()
+            builder.status(200).mimetype("image/jpeg").body(data).unwrap()
         } else {
             builder.status(404).body(Vec::new()).unwrap()
         };
@@ -85,11 +94,11 @@ pub fn handle_iss_protocol(_app: &AppHandle, request: &http::Request) -> Result<
 }
 
 fn check_iss_uri(uri: &str) -> bool {
-    let re = Regex::new(r"^iss://localhost/\d{8}/\d{6}-[A-Za-z0-9]*\.png$").unwrap();
-    if re.is_match(uri) {
+    static RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^iss://localhost/\d{8}/\d{6}-[A-Za-z0-9]*(-t)?$").unwrap());
+    if RE.is_match(uri) {
         return true;
     }
-    print!("Invalid uri: {}", uri);
+    // println!("Invalid uri: {}", uri);
     false
 }
  
@@ -115,21 +124,23 @@ pub fn list_dates() -> Result<Vec<String>, String> {
 
 #[tauri::command]
 pub fn list_screens(date: &str) -> Result<Vec<String>, String> {
+    static RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^(\d{6}-[A-Za-z0-9]+)\.jpg$").unwrap());
     // List all screenshots in a date
     let base_dir = Path::new(r"F:\immic-dev");
     let screen_dir = base_dir.join("screen");
     let date_dir = screen_dir.join(date);
     let mut screenshots = vec![];
     if date_dir.exists() {
-        let re = Regex::new(r"\d{6}-[A-Za-z0-9]*\.png$").unwrap();
         let paths = std::fs::read_dir(date_dir).unwrap();
         for path in paths {
             let path = path.unwrap().path();
-            if path.is_file() {
-                let filename = path.file_name().unwrap().to_str().unwrap().to_string();
-                if re.is_match(&filename) {
-                    screenshots.push(filename);
-                }
+            let filename = path.file_name().unwrap().to_str().unwrap();
+            if RE.is_match(&filename) && path.is_file() {
+                // println!("filename: {}", filename);
+                let caps = RE.captures(&filename).unwrap();
+                let image_name = &caps[1];
+                println!("image_name: {}", image_name);
+                screenshots.push(image_name.to_string());
             }
         }
     }
@@ -142,13 +153,14 @@ mod tests {
 
     #[test]
     fn test_check_iss_uri() {
-        assert!(check_iss_uri("iss://localhost/20210901/123456-abcdef.png"));
-        assert!(!check_iss_uri("iss://localhost/20210901/123456-abcdef.jpg"));
-        assert!(!check_iss_uri("iss://localhost/20210901/123456-abcdef"));
-        assert!(!check_iss_uri("iss://localhost/20210901/123456-abcdef.png/"));
-        assert!(!check_iss_uri("iss://localhost/20210901/123456-abcdef.png/abc"));
-        assert!(!check_iss_uri("iss://localhost/20210901/123456-abcdef.png/abc/"));
-        assert!(!check_iss_uri("iss://localhost//20210901/123456-abcdef.png"));
-        assert!(!check_iss_uri("iss://localhost/../20210901/123456-abcdef.png"));
+        assert!(check_iss_uri("iss://localhost/20210901/123456-abcdef"));
+        assert!(check_iss_uri("iss://localhost/20210901/123456-abcdef-t"));
+        assert!(!check_iss_uri("iss://localhost/20210901/123456-abcdef-t-t"));
+        assert!(!check_iss_uri("iss://localhost/20210901/123456-abcdef.png"));
+        assert!(!check_iss_uri("iss://localhost/20210901/123456-abcdef/"));
+        assert!(!check_iss_uri("iss://localhost/20210901/123456-abcdef/abc"));
+        assert!(!check_iss_uri("iss://localhost/20210901/123456-abcdef/.."));
+        assert!(!check_iss_uri("iss://localhost//20210901/123456-abcdef"));
+        assert!(!check_iss_uri("iss://localhost/../20210901/123456-abcdef"));
     }
 }

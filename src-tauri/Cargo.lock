@@ -1791,6 +1791,8 @@ version = "0.0.0"
 dependencies = [
  "async-cron-scheduler",
  "chrono",
+ "image",
+ "once_cell",
  "regex",
  "screenshots",
  "serde",

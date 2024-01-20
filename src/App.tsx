@@ -71,7 +71,7 @@ function App() {
       <div>
         {screens.map((screen) => (
           // <div key={screen}>{screen}</div>
-          <img key={screen} src={'https://iss.localhost/' + date + '/' + screen} alt={screen} />
+          <img key={screen} src={'https://iss.localhost/' + date + '/' + screen + '-t'} alt={screen} />
         ))}
       </div>
     </div>
