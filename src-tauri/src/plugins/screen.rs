@@ -1,6 +1,5 @@
 use async_cron_scheduler::{Job, JobId};
 use chrono::Local;
-use std::fmt::Debug;
 use std::path::Path;
 use std::sync::Mutex;
 use screenshots::Screen;
@@ -11,6 +10,7 @@ use crate::app::scheduler::AppScheduler;
 pub struct ScreenshotPlugin {
     job_id: Option<JobId>,
 }
+
 impl ScreenshotPlugin {
     pub fn new() -> Self {
         Self {
@@ -31,8 +31,21 @@ fn take_screenshot() {
     for screen in screens {
         let image = screen.capture().unwrap();
         let dt = Local::now();
-        let filename = format!("ss-{}-{}.png", dt.format("%Y%m%d-%H%M%S"), screen.display_info.id);
-        let path = Path::new(r"F:\immic-dev").join("screen").join(filename);
+        // Create directories if not exists
+        let base_dir = Path::new(r"F:\immic-dev");
+        if !base_dir.exists() {
+            std::fs::create_dir(&base_dir).unwrap();
+        }
+        let screen_dir = base_dir.join("screen");
+        if !screen_dir.exists() {
+            std::fs::create_dir(&screen_dir).unwrap();
+        }
+        let date_dir = screen_dir.join(dt.format("%Y%m%d").to_string());
+        if !date_dir.exists() {
+            std::fs::create_dir(&date_dir).unwrap();
+        }
+        let filename = format!("ss-{}-{}.png", dt.format("%H%M%S"), screen.display_info.id);
+        let path = date_dir.join(filename);
         image.save(path).unwrap();
     }
 }
