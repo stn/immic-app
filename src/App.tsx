@@ -6,10 +6,15 @@ import "./App.css";
 function App() {
   const [greetMsg, setGreetMsg] = useState("");
   const [name, setName] = useState("");
+  const [dates, setDates] = useState<string[]>([]);
 
   async function greet() {
     // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
     setGreetMsg(await invoke("greet", { name }));
+  }
+
+  async function listDates() {
+    setDates(await invoke("list_dates"));
   }
 
   return (
@@ -35,6 +40,7 @@ function App() {
         onSubmit={(e) => {
           e.preventDefault();
           greet();
+          listDates();
         }}
       >
         <input
@@ -46,6 +52,11 @@ function App() {
       </form>
 
       <p>{greetMsg}</p>
+      <div>
+        {dates.map((date) => (
+          <p key={date}>{date}</p>
+        ))}
+      </div>
     </div>
   );
 }

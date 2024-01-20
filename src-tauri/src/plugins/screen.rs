@@ -49,3 +49,22 @@ fn take_screenshot() {
         image.save(path).unwrap();
     }
 }
+
+#[tauri::command]
+pub fn list_dates() -> Result<Vec<String>, String> {
+    // List all screenshot dates
+    let base_dir = Path::new(r"F:\immic-dev");
+    let screen_dir = base_dir.join("screen");
+    let mut dates = vec![];
+    if screen_dir.exists() {
+        let paths = std::fs::read_dir(screen_dir).unwrap();
+        for path in paths {
+            let path = path.unwrap().path();
+            if path.is_dir() {
+                let date = path.file_name().unwrap().to_str().unwrap().to_string();
+                dates.push(date);
+            }
+        }
+    }
+    Ok(dates)
+}

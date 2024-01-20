@@ -26,7 +26,10 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::default().build())
-        .invoke_handler(tauri::generate_handler![greet])
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            plugins::screen::list_dates,
+        ])
         .manage(Mutex::new(AppScheduler::new()))
         .manage(Mutex::new(ScreenshotPlugin::new()))
         .setup(|app| {
