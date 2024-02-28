@@ -59,7 +59,7 @@ fn take_screenshot() {
         let thumb = image::imageops::thumbnail(&mut image, width, height);
         thumb.save(date_dir.join(format!("{}-{}-t.jpg", dt.format("%H%M%S"), monitor.id()))).unwrap();
 
-        // break; // save only the first screen for now
+        break; // save only the first screen for now
     }
 }
 
