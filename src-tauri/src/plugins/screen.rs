@@ -6,7 +6,7 @@ use std::error::Error;
 use std::fs;
 use std::path::Path;
 use std::sync::Mutex;
-use screenshots::Screen;
+use xcap::Monitor;
 use tauri::{App, AppHandle, Manager, State};
 use tauri::http;
 
@@ -31,10 +31,10 @@ impl ScreenshotPlugin {
 
 fn take_screenshot() {
     println!("screenshot");
-    let screens = Screen::all().unwrap();
+    let monitors = Monitor::all().unwrap();
 
-    for screen in screens {
-        let mut image = screen.capture().unwrap();
+    for monitor in monitors {
+        let mut image = monitor.capture_image().unwrap();
         let dt = Local::now();
         // Create directories if not exists
         let base_dir = Path::new(r"F:\immic-dev");
@@ -49,7 +49,7 @@ fn take_screenshot() {
         if !date_dir.exists() {
             std::fs::create_dir(&date_dir).unwrap();
         }
-        let filename = format!("{}-{}.jpg", dt.format("%H%M%S"), screen.display_info.id);
+        let filename = format!("{}-{}.jpg", dt.format("%H%M%S"), monitor.id());
         let path = date_dir.join(filename);
         image.save(path).unwrap();
 
@@ -57,9 +57,9 @@ fn take_screenshot() {
         let width = image.width() / 8;
         let height = image.height() / 8;
         let thumb = image::imageops::thumbnail(&mut image, width, height);
-        thumb.save(date_dir.join(format!("{}-{}-t.jpg", dt.format("%H%M%S"), screen.display_info.id))).unwrap();
+        thumb.save(date_dir.join(format!("{}-{}-t.jpg", dt.format("%H%M%S"), monitor.id()))).unwrap();
 
-        break; // save only the first screen for now
+        // break; // save only the first screen for now
     }
 }
 
