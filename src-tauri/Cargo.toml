@@ -2,7 +2,7 @@
 name = "immic-app"
 version = "0.0.0"
 description = "A Tauri App"
-authors = ["you"]
+authors = ["Akira Ishino"]
 license = ""
 repository = ""
 edition = "2021"
