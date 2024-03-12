@@ -15,6 +15,7 @@ tauri-build = { version = "1.5", features = [] }
 [dependencies]
 tauri = { version = "1.5", features = [ "notification-all", "window-create", "process-exit", "system-tray", "shell-open"] }
 tauri-plugin-store = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v1" }
+anyhow = "1.0.80"
 async-cron-scheduler = "1.0"
 chrono = "0.4"
 image = "0.24"
@@ -29,6 +30,20 @@ xcap = "0.0.4"
 git = "https://github.com/tauri-apps/plugins-workspace"
 branch = "v1"
 features = ["sqlite"]
+
+[dependencies.windows]
+varsion = "0.54.0"
+features = [
+    "Win32_System_Com",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Foundation",
+    "Win32_UI_Accessibility",
+    "Win32_System_Threading",
+    "Win32_System_Console",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_Shell",
+    # "interface",
+]
 
 [features]
 # this feature is used for production builds or when `devPath` points to the filesystem

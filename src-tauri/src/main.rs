@@ -11,6 +11,7 @@ use app::setting::Setting;
 
 use tauri::{Manager, State};
 
+use crate::plugins::application::ApplicationPlugin;
 use crate::plugins::screen::ScreenshotPlugin;
 
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
@@ -37,6 +38,7 @@ fn main() {
              move |app, request| { plugins::screen::handle_iss_protocol(&app, &request) }
             )
         .manage(Mutex::new(AppScheduler::new()))
+        .manage(Mutex::new(ApplicationPlugin::new()))
         .manage(Mutex::new(ScreenshotPlugin::new()))
         .setup(|app| {
             {
@@ -45,6 +47,10 @@ fn main() {
             {
                 let scheduler: State<Mutex<AppScheduler>> = app.state();
                 scheduler.lock().unwrap().start();
+            }
+            {
+                let application: State<Mutex<ApplicationPlugin>> = app.state();
+                application.lock().unwrap().start().unwrap();
             }
             {
                 let screenshot: State<Mutex<ScreenshotPlugin>> = app.state();
