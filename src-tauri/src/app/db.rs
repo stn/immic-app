@@ -57,7 +57,7 @@ pub async fn init() {
 // }
 
 async fn migrate() -> sqlx::Result<()> {
-    sqlx::migrate!()
+    sqlx::migrate!("./migrations")
         .run(&*POOL)
         .await?;
     Ok(())

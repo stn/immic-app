@@ -135,7 +135,7 @@ unsafe fn check_active_window(hwnd: HWND, ue: UpdateEvents) -> Result<Applicatio
     // let mut sys = sysinfo::System::new_all();
     let mut sys = sysinfo::System::new();
     let pid = sysinfo::Pid::from_u32(process_id);
-    sys.refresh_process(pid);
+    sys.refresh_process_specifics(pid, sysinfo::ProcessRefreshKind::new());
     let process = sys.processes().get(&pid);
     let process_name = process.map(|p| p.name().to_string()).unwrap_or_else(|| {
         format!("pid:{}", process_id)

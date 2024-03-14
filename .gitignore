@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+eventlog.db
+eventlog.db-shm
+eventlog.db-wal

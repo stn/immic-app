@@ -14,6 +14,8 @@ use tauri::{Manager, State};
 use crate::plugins::application::ApplicationPlugin;
 use crate::plugins::screen::ScreenshotPlugin;
 
+use app::db;
+
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
 #[tauri::command]
 fn greet(name: &str) -> String {
