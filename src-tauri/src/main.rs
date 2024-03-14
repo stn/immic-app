@@ -20,14 +20,19 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     // Enable gpu hardware acceleration on Windows
     //refer to this issue: https://github.com/tauri-apps/tauri/issues/4891
     std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--ignore-gpu-blocklist");
 
+    tauri::async_runtime::set(tokio::runtime::Handle::current());
+
+    db::init().await;
+
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::default().build())
-        .plugin(tauri_plugin_sql::Builder::default().build())
+        // .plugin(tauri_plugin_sql::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
             greet,
             plugins::screen::list_dates,
@@ -38,8 +43,8 @@ fn main() {
              move |app, request| { plugins::screen::handle_iss_protocol(&app, &request) }
             )
         .manage(Mutex::new(AppScheduler::new()))
-        .manage(Mutex::new(ApplicationPlugin::new()))
         .manage(Mutex::new(ScreenshotPlugin::new()))
+        .manage(Mutex::new(ApplicationPlugin::new()))
         .setup(|app| {
             {
                 app.manage(Mutex::new(Setting::new(app)));

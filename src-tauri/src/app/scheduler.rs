@@ -4,6 +4,7 @@ use chrono::offset::Local;
 pub struct AppScheduler {
     scheduler: Option<Scheduler<Local>>,
 }
+
 impl AppScheduler {
     pub fn new() -> Self {
         Self {
