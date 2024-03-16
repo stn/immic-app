@@ -49,36 +49,24 @@ impl ApplicationPlugin {
             while let Some(ue) = rx.recv().await {
                 println!("manager: {:?}", ue);
 
-                match ue {
+                let log = match ue {
                     UpdateEvents::Active(hwnd) => {
-                        let log = unsafe { check_active_window(hwnd, ue) }.unwrap();
-                        sqlx::query!(
-                            "INSERT INTO application (eventId, kind, name, title, x0, y0, x1, y1) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                            1,
-                            "active",
-                            log.name,
-                            log.title,
-                            log.left,
-                            log.top,
-                            log.right,
-                            log.bottom
-                        ).execute(db::pool()).await.unwrap();
+                        unsafe { check_active_window(hwnd, ue) }.unwrap()
                     },
                     UpdateEvents::Move(hwnd) => {
-                        let log = unsafe { check_active_window(hwnd, ue) }.unwrap();
-                        sqlx::query!(
-                            "INSERT INTO application (eventId, kind, name, title, x0, y0, x1, y1) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                            1,
-                            "move",
-                            log.name,
-                            log.title,
-                            log.left,
-                            log.top,
-                            log.right,
-                            log.bottom
-                        ).execute(db::pool()).await.unwrap();
+                        unsafe { check_active_window(hwnd, ue) }.unwrap()
                     },
-                }
+                };
+                let query = sqlx::query("INSERT INTO application (eventId, kind, name, title, x0, y0, x1, y1) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                query.bind(1)
+                    .bind("active")
+                    .bind(log.name)
+                    .bind(log.title)
+                    .bind(log.left)
+                    .bind(log.top)
+                    .bind(log.right)
+                    .bind(log.bottom)
+                    .execute(db::pool()).await.unwrap();
             }
         });
 
