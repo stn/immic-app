@@ -13,8 +13,8 @@ CREATE TABLE IF NOT EXISTS application (
     kind TEXT NOT NULL,
     name TEXT NOT NULL,
     title TEXT,
-    top INTEGER,
-    left INTEGER,
-    width INTEGER,
-    height INTEGER
+    x0 INTEGER,
+    y0 INTEGER,
+    x1 INTEGER,
+    y1 INTEGER
 );

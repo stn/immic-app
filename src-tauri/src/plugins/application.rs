@@ -5,10 +5,14 @@ use tokio::sync::mpsc;
 use windows::Win32::{
     Foundation::HWND,
     UI::{Accessibility::{SetWinEventHook, UnhookWinEvent, HWINEVENTHOOK}, WindowsAndMessaging::{
-        DispatchMessageW, GetMessageW, GetWindowTextW, GetWindowThreadProcessId, TranslateMessage, EVENT_OBJECT_DESTROY, EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MOVESIZEEND, MSG, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS
+        DispatchMessageW, GetMessageW, GetWindowTextW, GetWindowThreadProcessId, TranslateMessage,
+        EVENT_OBJECT_DESTROY, EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MOVESIZEEND, MSG,
+        WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS,
     }},
 };
 use windows::Win32::UI::WindowsAndMessaging::{GetWindowInfo, WINDOWINFO, WS_VISIBLE};
+
+use crate::app::db;
 
 #[derive(Debug)]
 pub enum UpdateEvents {
@@ -33,8 +37,7 @@ pub struct ApplicationPlugin {
 
 impl ApplicationPlugin {
     pub fn new() -> Self {
-        Self {
-        }
+        Self {}
     }
 
     pub fn start(&mut self) -> Result<()> {
@@ -45,12 +48,35 @@ impl ApplicationPlugin {
         let _manager = tokio::spawn(async move {
             while let Some(ue) = rx.recv().await {
                 println!("manager: {:?}", ue);
+
                 match ue {
                     UpdateEvents::Active(hwnd) => {
-                        let _ = unsafe { check_active_window(hwnd, ue) };
+                        let log = unsafe { check_active_window(hwnd, ue) }.unwrap();
+                        sqlx::query!(
+                            "INSERT INTO application (eventId, kind, name, title, x0, y0, x1, y1) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                            1,
+                            "active",
+                            log.name,
+                            log.title,
+                            log.left,
+                            log.top,
+                            log.right,
+                            log.bottom
+                        ).execute(db::pool()).await.unwrap();
                     },
                     UpdateEvents::Move(hwnd) => {
-                        let _ = unsafe { check_active_window(hwnd, ue) };
+                        let log = unsafe { check_active_window(hwnd, ue) }.unwrap();
+                        sqlx::query!(
+                            "INSERT INTO application (eventId, kind, name, title, x0, y0, x1, y1) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                            1,
+                            "move",
+                            log.name,
+                            log.title,
+                            log.left,
+                            log.top,
+                            log.right,
+                            log.bottom
+                        ).execute(db::pool()).await.unwrap();
                     },
                 }
             }
@@ -161,7 +187,7 @@ unsafe fn check_active_window(hwnd: HWND, ue: UpdateEvents) -> Result<Applicatio
     // let process_name = String::from_utf16_lossy(&buffer[..size_needed as usize]);
     // CloseHandle(process_handle).unwrap();
 
-    if !title.is_empty() /* && info.dwStyle.contains(WS_VISIBLE) */ {
+    if !title.is_empty() && info.dwStyle.contains(WS_VISIBLE) {
         println!(
             "{}, {} ({}, {})-({}, {})",
             process_name,

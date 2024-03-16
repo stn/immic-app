@@ -1,5 +1,3 @@
-use async_cron_scheduler::Scheduler;
-use chrono::Local;
 use once_cell::sync::Lazy;
 use sqlx::Sqlite;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
@@ -20,6 +18,10 @@ pub async fn init() {
     // after_connectを使うといいかもしれない。
     // https://docs.rs/sqlx/latest/sqlx/pool/struct.PoolOptions.html#method.after_connect
     migrate().await.unwrap();
+}
+
+pub fn pool() -> &'static sqlx::Pool<Sqlite> {
+    &*POOL
 }
 
 // impl Database {
@@ -77,9 +79,14 @@ async fn migrate() -> sqlx::Result<()> {
 //     Ok(())
 // }
 
-#[macro_export]
-macro_rules! execute (
-    ($query:expr) => ({
-        sqlx::query($query).execute(&*POOL)
-    });
-);
+// #[macro_export]
+// macro_rules! query (
+//     ($query:expr) => ({
+//         sqlx::sqlx_macros::expand_query!(source = $query).execute(&*$crate::app::db::POOL)
+//     });
+//     ($query:expr, $($arg:expr)*) => ({
+//         sqlx::sqlx_macros::expand_query!(srouce = $query, args = [$($arg)*]).execute(&*$crate::app::db::POOL)
+//     });
+// );
+
+// pub(crate) use query;
