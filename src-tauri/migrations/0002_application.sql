@@ -2,13 +2,13 @@
 --- Application
 CREATE TABLE IF NOT EXISTS application (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    eventId INTEGER NOT NULL,
-    kind TEXT NOT NULL,
-    processId INTEGER NOT NULL,
-    name TEXT NOT NULL,
+    eventId INTEGER,
+    kind TEXT,
+    processId INTEGER,
+    name TEXT,
     title TEXT,
-    x0 INTEGER,
-    y0 INTEGER,
-    x1 INTEGER,
-    y1 INTEGER
+    x INTEGER,
+    y INTEGER,
+    width INTEGER,
+    height INTEGER
 );

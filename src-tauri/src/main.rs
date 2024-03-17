@@ -6,7 +6,7 @@ mod plugins;
 
 use std::sync::Mutex;
 use app::tray;
-use app::scheduler::AppScheduler;
+// use app::scheduler::AppScheduler;
 use app::setting::Setting;
 
 use tauri::{Manager, State};
@@ -44,20 +44,20 @@ async fn main() {
             "iss",
              move |app, request| { plugins::screen::handle_iss_protocol(&app, &request) }
             )
-        .manage(Mutex::new(AppScheduler::new()))
+        // .manage(Mutex::new(AppScheduler::new()))
         .manage(Mutex::new(ScreenshotPlugin::new()))
         .manage(Mutex::new(ApplicationPlugin::new()))
         .setup(|app| {
             {
                 app.manage(Mutex::new(Setting::new(app)));
             }
-            {
-                let scheduler: State<Mutex<AppScheduler>> = app.state();
-                scheduler.lock().unwrap().start();
-            }
+            // {
+            //     let scheduler: State<Mutex<AppScheduler>> = app.state();
+            //     scheduler.lock().unwrap().start();
+            // }
             {
                 let application: State<Mutex<ApplicationPlugin>> = app.state();
-                application.lock().unwrap().start().unwrap();
+                application.lock().unwrap().start(app);
             }
             {
                 let screenshot: State<Mutex<ScreenshotPlugin>> = app.state();

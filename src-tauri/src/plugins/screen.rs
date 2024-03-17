@@ -10,22 +10,30 @@ use xcap::Monitor;
 use tauri::{App, AppHandle, Manager, State};
 use tauri::http;
 
-use crate::app::scheduler::AppScheduler;
+// use crate::app::scheduler::AppScheduler;
 
 pub struct ScreenshotPlugin {
-    job_id: Option<JobId>,
+    // job_id: Option<JobId>,
 }
 
 impl ScreenshotPlugin {
     pub fn new() -> Self {
         Self {
-            job_id: None,
+            // job_id: None,
         }
     }
     pub fn start(&mut self, app: &App) {
-        let scheduler: State<Mutex<AppScheduler>> = app.state();
-        let job = Job::cron("0 * * * * *").unwrap();
-        self.job_id = scheduler.lock().unwrap().insert(job, |_id| take_screenshot());
+        // let scheduler: State<Mutex<AppScheduler>> = app.state();
+        // let job = Job::cron("0 * * * * *").unwrap();
+        // self.job_id = scheduler.lock().unwrap().insert(job, |_id| take_screenshot());
+
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+        tokio::spawn(async move {
+            loop {
+                interval.tick().await;
+                take_screenshot();
+            }
+        });
     }
 }
 
