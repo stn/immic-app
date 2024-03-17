@@ -5,12 +5,11 @@ use tokio::sync::mpsc;
 use windows::Win32::{
     Foundation::HWND,
     UI::{Accessibility::{SetWinEventHook, UnhookWinEvent, HWINEVENTHOOK}, WindowsAndMessaging::{
-        DispatchMessageW, GetMessageW, GetWindowTextW, GetWindowThreadProcessId, TranslateMessage,
-        EVENT_OBJECT_DESTROY, EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MOVESIZEEND, MSG,
-        WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS,
+        DispatchMessageW, GetMessageW, GetWindowTextW, GetWindowThreadProcessId, TranslateMessage, EVENT_OBJECT_DESTROY, EVENT_OBJECT_NAMECHANGE, EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MOVESIZEEND, MSG, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS
     }},
 };
 use windows::Win32::UI::WindowsAndMessaging::{GetWindowInfo, WINDOWINFO, WS_VISIBLE};
+use sqlx;
 
 use crate::app::db;
 
@@ -19,17 +18,19 @@ pub enum UpdateEvents {
     Active(HWND),
     Move(HWND),
     // Destroy(HWND),
+    // Rename(HWND),
 }
 
 static UPDATE_EVENTS_TX: OnceCell<mpsc::Sender<UpdateEvents>> = OnceCell::new();
 
 pub struct ApplicationLog {
+    process_id: u32,
     name: String,
     title: String,
-    top: i32,
-    right: i32,
-    bottom: i32,
-    left: i32,
+    x0: i32,
+    y0: i32,
+    x1: i32,
+    y1: i32,
 }
 
 pub struct ApplicationPlugin {
@@ -56,17 +57,13 @@ impl ApplicationPlugin {
                     UpdateEvents::Move(hwnd) => {
                         unsafe { check_active_window(hwnd, ue) }.unwrap()
                     },
+                    // UpdateEvents::Rename(hwnd) => {
+                    //     unsafe { check_active_window(hwnd, ue) }.unwrap()
+                    // },
                 };
-                let query = sqlx::query("INSERT INTO application (eventId, kind, name, title, x0, y0, x1, y1) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-                query.bind(1)
-                    .bind("active")
-                    .bind(log.name)
-                    .bind(log.title)
-                    .bind(log.left)
-                    .bind(log.top)
-                    .bind(log.right)
-                    .bind(log.bottom)
-                    .execute(db::pool()).await.unwrap();
+                insert_application_log(log).await.unwrap_or_else(|e| {
+                    println!("manager: Error on insert_application_log: {:?}", e);
+                });
             }
         });
 
@@ -74,6 +71,7 @@ impl ApplicationPlugin {
             let e = SetWinEventHook(
                 EVENT_SYSTEM_FOREGROUND,
                 EVENT_OBJECT_DESTROY,
+                // EVENT_OBJECT_NAMECHANGE,
                 None,
                 Some(event_hook_proc),
                 0,
@@ -114,6 +112,7 @@ unsafe extern "system" fn event_hook_proc(
         EVENT_SYSTEM_FOREGROUND => UpdateEvents::Active(hwnd),
         EVENT_SYSTEM_MOVESIZEEND => UpdateEvents::Move(hwnd),
         // EVENT_OBJECT_DESTROY if id_object == OBJID_WINDOW.0 => UpdateEvents::Destroy(hwnd),
+        // EVENT_OBJECT_NAMECHANGE => UpdateEvents::Rename(hwnd),
         _ => return,
     };
 
@@ -138,7 +137,8 @@ unsafe fn check_active_window(hwnd: HWND, ue: UpdateEvents) -> Result<Applicatio
         cbSize: core::mem::size_of::<WINDOWINFO>() as u32,
         ..Default::default()
     };
-    GetWindowInfo(hwnd, &mut info).unwrap(); // destroyではすでにアプリは消えていて、これはpanicになることがある。
+    // destroyではすでにアプリは消えていて、これはerrorになることがある。
+    GetWindowInfo(hwnd, &mut info).expect("GetWindowInfo failed");
 
     let mut process_id = 0u32;
     GetWindowThreadProcessId(hwnd, Some(&mut process_id));
@@ -198,11 +198,30 @@ unsafe fn check_active_window(hwnd: HWND, ue: UpdateEvents) -> Result<Applicatio
     }
 
     Ok(ApplicationLog {
+        process_id,
         name: process_name,
-        title: title,
-        top: info.rcWindow.top,
-        right: info.rcWindow.right,
-        bottom: info.rcWindow.bottom,
-        left: info.rcWindow.left,
+        title,
+        x0: info.rcWindow.top,
+        y0: info.rcWindow.right,
+        x1: info.rcWindow.bottom,
+        y1: info.rcWindow.left,
     })
+}
+
+async fn insert_application_log(log: ApplicationLog) -> Result<()> {
+    let pool = db::pool();
+    let result = sqlx::query(
+        "INSERT INTO application (eventId, kind, processId, name, title, x0, y0, x1, y1) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+        .bind(1)
+        .bind("active")
+        .bind(log.process_id)
+        .bind(log.name)
+        .bind(log.title)
+        .bind(log.x0)
+        .bind(log.y0)
+        .bind(log.x1)
+        .bind(log.y1)
+        .execute(pool).await?;
+    Ok(())
 }
