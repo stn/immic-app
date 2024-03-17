@@ -6,7 +6,6 @@ mod plugins;
 
 use std::sync::Mutex;
 use app::tray;
-// use app::scheduler::AppScheduler;
 use app::setting::Setting;
 
 use tauri::{Manager, State};
@@ -34,7 +33,6 @@ async fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::default().build())
-        // .plugin(tauri_plugin_sql::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
             greet,
             plugins::screen::list_dates,
@@ -44,24 +42,19 @@ async fn main() {
             "iss",
              move |app, request| { plugins::screen::handle_iss_protocol(&app, &request) }
             )
-        // .manage(Mutex::new(AppScheduler::new()))
         .manage(Mutex::new(ScreenshotPlugin::new()))
         .manage(Mutex::new(ApplicationPlugin::new()))
         .setup(|app| {
             {
                 app.manage(Mutex::new(Setting::new(app)));
             }
-            // {
-            //     let scheduler: State<Mutex<AppScheduler>> = app.state();
-            //     scheduler.lock().unwrap().start();
-            // }
             {
                 let application: State<Mutex<ApplicationPlugin>> = app.state();
-                application.lock().unwrap().start(app);
+                application.lock().unwrap().start();
             }
             {
                 let screenshot: State<Mutex<ScreenshotPlugin>> = app.state();
-                screenshot.lock().unwrap().start(app);
+                screenshot.lock().unwrap().start();
             }
             Ok(())
         })

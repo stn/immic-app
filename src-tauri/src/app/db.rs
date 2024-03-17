@@ -13,6 +13,10 @@ static POOL: Lazy<sqlx::Pool<Sqlite>> = Lazy::new(|| {
     pool
 });
 
+pub fn pool() -> &'static sqlx::Pool<Sqlite> {
+    &*POOL
+}
+
 pub async fn init() {
     // TODO migrateのバージョンを確認して実行するべきかを判断する
     // after_connectを使うといいかもしれない。
@@ -20,73 +24,9 @@ pub async fn init() {
     migrate().await.unwrap();
 }
 
-pub fn pool() -> &'static sqlx::Pool<Sqlite> {
-    &*POOL
-}
-
-// impl Database {
-//     pub async fn new() -> Self {
-//         let pool = connect().await.unwrap();
-//         migrate(&pool).await.unwrap();
-//         Self { pool }
-//     }
-//
-//     pub async fn insert(&self, table: String, key: String, value: String) -> sqlx::Result<()> {
-//         sqlx::query(
-//             format!(
-//                 "INSERT INTO {} (key, value) VALUES (?, ?)",
-//                 table
-//             ).as_str()
-//         )
-//             .bind(key)
-//             .bind(value)
-//             .execute(&self.pool)
-//             .await?;
-//         Ok(())
-//     }
-// }
-
-// async fn connect() -> sqlx::Result<sqlx::SqlitePool> {
-//     let options = SqliteConnectOptions::new()
-//         .filename("eventlog.db")
-//         .create_if_missing(true)
-//         .journal_mode(SqliteJournalMode::Wal)
-//         .synchronous(SqliteSynchronous::Normal);
-//     let pool = SqlitePoolOptions::new()
-//         .connect_with(options)
-//         .await?;
-//     Ok(pool)
-// }
-
 async fn migrate() -> sqlx::Result<()> {
     sqlx::migrate!("./migrations")
         .run(&*POOL)
         .await?;
     Ok(())
 }
-
-// pub async fn insert(table: String, key: String, value: String) -> sqlx::Result<()> {
-//     sqlx::query(
-//         format!(
-//             "INSERT INTO {} (key, value) VALUES (?, ?)",
-//             table
-//         ).as_str()
-//     )
-//         .bind(key)
-//         .bind(value)
-//         .execute(&*POOL)
-//         .await?;
-//     Ok(())
-// }
-
-// #[macro_export]
-// macro_rules! query (
-//     ($query:expr) => ({
-//         sqlx::sqlx_macros::expand_query!(source = $query).execute(&*$crate::app::db::POOL)
-//     });
-//     ($query:expr, $($arg:expr)*) => ({
-//         sqlx::sqlx_macros::expand_query!(srouce = $query, args = [$($arg)*]).execute(&*$crate::app::db::POOL)
-//     });
-// );
-
-// pub(crate) use query;

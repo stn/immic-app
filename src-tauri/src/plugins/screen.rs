@@ -1,32 +1,20 @@
-use async_cron_scheduler::{Job, JobId};
 use chrono::Local;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use std::error::Error;
 use std::fs;
 use std::path::Path;
-use std::sync::Mutex;
 use xcap::Monitor;
-use tauri::{App, AppHandle, Manager, State};
+use tauri::{App, AppHandle};
 use tauri::http;
 
-// use crate::app::scheduler::AppScheduler;
-
-pub struct ScreenshotPlugin {
-    // job_id: Option<JobId>,
-}
+pub struct ScreenshotPlugin;
 
 impl ScreenshotPlugin {
     pub fn new() -> Self {
-        Self {
-            // job_id: None,
-        }
+        Self {}
     }
-    pub fn start(&mut self, app: &App) {
-        // let scheduler: State<Mutex<AppScheduler>> = app.state();
-        // let job = Job::cron("0 * * * * *").unwrap();
-        // self.job_id = scheduler.lock().unwrap().insert(job, |_id| take_screenshot());
-
+    pub fn start(&mut self) {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
         tokio::spawn(async move {
             loop {
@@ -72,8 +60,6 @@ fn take_screenshot() {
 }
 
 pub fn handle_iss_protocol(_app: &AppHandle, request: &http::Request) -> Result<http::Response, Box<dyn Error>> {
-    // let screenshot: State<Mutex<ScreenshotPlugin>> = app.state();
-    // let mut screenshot = screenshot.lock().unwrap();
     let uri = request.uri();
     if !check_iss_uri(uri) {
         return Err("Invalid uri".into());
