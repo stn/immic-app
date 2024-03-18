@@ -13,7 +13,7 @@ edition = "2021"
 tauri-build = { version = "1.5", features = [] }
 
 [dependencies]
-tauri = { version = "1.5", features = [ "notification-all", "window-create", "process-exit", "system-tray", "shell-open"] }
+tauri = { version = "1.5", features = [ "notification-all", "window-create", "process-command-api", "process-exit", "system-tray", "shell-open"] }
 tauri-plugin-store = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v1" }
 active-win-pos-rs = "0.8.3"
 anyhow = "1.0.80"

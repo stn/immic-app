@@ -28,7 +28,7 @@ pub fn system_tray_event(app: &AppHandle, event: SystemTrayEvent) {
             match id.as_str() {
                 "quit" => {
                     // https://github.com/tauri-apps/tauri/discussions/3273
-                    // tauri::api::process::kill_children();
+                    tauri::api::process::kill_children();
                     std::process::exit(0);
                 }
                 "show" => {
