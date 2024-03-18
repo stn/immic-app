@@ -1,8 +1,5 @@
 use anyhow::Result;
 // use sqlx;
-use tauri::App;
-use tauri::{Manager, State};
-use tokio_util::sync::CancellationToken;
 
 // use watchexec_signals::Signal;
 use watchexec::Watchexec;
@@ -27,16 +24,9 @@ impl FilelogPlugin {
         Self {}
     }
 
-    pub fn start(&mut self, app: &App) -> Result<()> {
-        let app = app.handle();
-
+    pub fn start(&mut self) -> Result<()> {
         println!("filelog");
         let wx = Watchexec::new(move |mut action| {
-            let cancel_token: State<CancellationToken> = app.state();
-            if cancel_token.is_cancelled() {
-                action.quit();
-            }
-
             // print any events
             for event in action.events.iter() {
                 eprintln!("EVENT: {event:?}");

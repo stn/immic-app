@@ -2,13 +2,11 @@ use tauri::{
     AppHandle,
     CustomMenuItem,
     Manager,
-    State,
     SystemTray,
     SystemTrayEvent,
     SystemTrayMenu,
     SystemTrayMenuItem,
 };
-use tokio_util::sync::CancellationToken;
 
 pub fn generate_system_tray() -> SystemTray {
     let quit = CustomMenuItem::new("quit".to_string(), "Quit");
@@ -29,8 +27,6 @@ pub fn system_tray_event(app: &AppHandle, event: SystemTrayEvent) {
         SystemTrayEvent::MenuItemClick { id, .. } => {
             match id.as_str() {
                 "quit" => {
-                    let token: State<CancellationToken> = app.state();
-                    token.clone().cancel();
                     // https://github.com/tauri-apps/tauri/discussions/3273
                     // tauri::api::process::kill_children();
                     std::process::exit(0);

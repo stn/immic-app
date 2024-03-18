@@ -6,7 +6,6 @@ mod plugins;
 
 use std::sync::Mutex;
 use tauri::{Manager, State};
-use tokio_util::sync::CancellationToken;
 
 use app::tray;
 use app::setting::Setting;
@@ -45,7 +44,6 @@ async fn main() {
                 plugins::screen::handle_iss_protocol(&app, &request)
             }
         )
-        .manage(CancellationToken::new())
         .manage(Mutex::new(ScreenshotPlugin::new()))
         .manage(Mutex::new(ApplicationPlugin::new()))
         .manage(Mutex::new(FilelogPlugin::new()))
@@ -55,15 +53,15 @@ async fn main() {
             }
             {
                 let application: State<Mutex<ApplicationPlugin>> = app.state();
-                application.lock().unwrap().start(app);
+                application.lock().unwrap().start();
             }
             {
                 let filelog: State<Mutex<FilelogPlugin>> = app.state();
-                filelog.lock().unwrap().start(app);
+                filelog.lock().unwrap().start();
             }
             {
                 let screenshot: State<Mutex<ScreenshotPlugin>> = app.state();
-                screenshot.lock().unwrap().start(app);
+                screenshot.lock().unwrap().start();
             }
             Ok(())
         })

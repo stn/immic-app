@@ -1,9 +1,6 @@
 use active_win_pos_rs::get_active_window;
 use anyhow::Result;
 use sqlx;
-use tauri::{App, Manager, State};
-use tokio::select;
-use tokio_util::sync::CancellationToken;
 
 use crate::app::db;
 
@@ -25,23 +22,14 @@ impl ApplicationPlugin {
         Self {}
     }
 
-    pub fn start(&mut self, app: &App) -> Result<()> {
-        let app = app.handle();
+    pub fn start(&mut self) {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
         tokio::spawn(async move {
-            let cancel_token: State<CancellationToken> = app.state();
             loop {
-                select! {
-                    _ = cancel_token.cancelled() => {
-                        break;
-                    }
-                    _ = interval.tick() => {
-                        check_application().await;
-                    }
-                }
+                interval.tick().await;
+                check_application().await;
             }
         });
-        Ok(())
     }
 }
 
