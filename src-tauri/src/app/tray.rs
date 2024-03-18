@@ -11,6 +11,7 @@ use tauri::{
     SystemTrayMenuItem,
 };
 
+use crate::app::db;
 use crate::plugins::Plugin;
 use crate::plugins::application::ApplicationPlugin;
 use crate::plugins::filelog::FilelogPlugin;
@@ -36,6 +37,7 @@ pub fn system_tray_event(app: &AppHandle, event: SystemTrayEvent) {
         SystemTrayEvent::MenuItemClick { id, .. } => {
             match id.as_str() {
                 "quit" => {
+                    let app = app.clone();
                     // Plugins
                     let application: State<Mutex<ApplicationPlugin>> = app.state();
                     application.lock().unwrap().stop();
@@ -43,10 +45,15 @@ pub fn system_tray_event(app: &AppHandle, event: SystemTrayEvent) {
                     filelog.lock().unwrap().stop();
                     let screenshot: State<Mutex<ScreenshotPlugin>> = app.state();
                     screenshot.lock().unwrap().stop();
+                    tokio::spawn(async move {
+                        // DB
+                        db::close().await;
 
-                    // https://github.com/tauri-apps/tauri/discussions/3273
-                    // tauri::api::process::kill_children();
-                    std::process::exit(0);
+                        // https://github.com/tauri-apps/tauri/discussions/3273
+                        tauri::api::process::kill_children();
+
+                        app.exit(0);
+                    });
                 }
                 "show" => {
                     let window = app.get_window("main").unwrap();

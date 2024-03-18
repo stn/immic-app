@@ -30,3 +30,7 @@ async fn migrate() -> sqlx::Result<()> {
         .await?;
     Ok(())
 }
+
+pub async fn close() {
+    POOL.close().await;
+}
