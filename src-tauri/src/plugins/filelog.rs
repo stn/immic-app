@@ -1,10 +1,11 @@
-use anyhow::Result;
+use std::sync::{Arc, Mutex};
 // use sqlx;
 
 // use watchexec_signals::Signal;
 use watchexec::Watchexec;
 
 // use crate::app::db;
+use crate::plugins::Plugin;
 
 // #[derive(Debug)]
 // pub struct ApplicationLog {
@@ -17,16 +18,28 @@ use watchexec::Watchexec;
 //     height: i64,
 // }
 
-pub struct FilelogPlugin;
+pub struct FilelogPlugin {
+    running: Arc<Mutex<bool>>,
+}
 
 impl FilelogPlugin {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            running: Arc::new(Mutex::new(false)),
+        }
     }
+}
 
-    pub fn start(&mut self) -> Result<()> {
+impl Plugin for FilelogPlugin {
+    fn start(&mut self) {
         println!("filelog");
+        *self.running.lock().unwrap() = true;
+        let running = Arc::clone(&self.running);
         let wx = Watchexec::new(move |mut action| {
+            if !*running.lock().unwrap() {
+                action.quit();
+            }
+
             // print any events
             for event in action.events.iter() {
                 eprintln!("EVENT: {event:?}");
@@ -38,7 +51,7 @@ impl FilelogPlugin {
             // }
 
             action
-        })?;
+        }).unwrap();
 
         // watch the current directory
         wx.config.pathset(["f:\\"]);
@@ -46,8 +59,6 @@ impl FilelogPlugin {
         tokio::spawn(async move {
             wx.main().await.unwrap();
         });
-
-        Ok(())
 
         // let (tx, mut rx) = mpsc::channel(256);
 
@@ -84,6 +95,10 @@ impl FilelogPlugin {
         //         println!("Received file: {:?}", file);
         //     }
         // });
+    }
+
+    fn stop(&mut self) {
+        *self.running.lock().unwrap() = false;
     }
 }
 

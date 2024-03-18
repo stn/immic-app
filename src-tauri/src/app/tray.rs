@@ -1,12 +1,21 @@
+use std::sync::Mutex;
+
 use tauri::{
     AppHandle,
     CustomMenuItem,
     Manager,
+    State,
     SystemTray,
     SystemTrayEvent,
     SystemTrayMenu,
     SystemTrayMenuItem,
 };
+
+use crate::plugins::Plugin;
+use crate::plugins::application::ApplicationPlugin;
+use crate::plugins::filelog::FilelogPlugin;
+use crate::plugins::screen::ScreenshotPlugin;
+
 
 pub fn generate_system_tray() -> SystemTray {
     let quit = CustomMenuItem::new("quit".to_string(), "Quit");
@@ -27,8 +36,16 @@ pub fn system_tray_event(app: &AppHandle, event: SystemTrayEvent) {
         SystemTrayEvent::MenuItemClick { id, .. } => {
             match id.as_str() {
                 "quit" => {
+                    // Plugins
+                    let application: State<Mutex<ApplicationPlugin>> = app.state();
+                    application.lock().unwrap().stop();
+                    let filelog: State<Mutex<FilelogPlugin>> = app.state();
+                    filelog.lock().unwrap().stop();
+                    let screenshot: State<Mutex<ScreenshotPlugin>> = app.state();
+                    screenshot.lock().unwrap().stop();
+
                     // https://github.com/tauri-apps/tauri/discussions/3273
-                    tauri::api::process::kill_children();
+                    // tauri::api::process::kill_children();
                     std::process::exit(0);
                 }
                 "show" => {

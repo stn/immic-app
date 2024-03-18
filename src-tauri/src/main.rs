@@ -7,13 +7,13 @@ mod plugins;
 use std::sync::Mutex;
 use tauri::{Manager, State};
 
+use app::db;
 use app::tray;
 use app::setting::Setting;
+use plugins::Plugin;
 use plugins::application::ApplicationPlugin;
 use plugins::filelog::FilelogPlugin;
 use plugins::screen::ScreenshotPlugin;
-
-use app::db;
 
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
 #[tauri::command]

@@ -4,24 +4,43 @@ use regex::Regex;
 use std::error::Error;
 use std::fs;
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 use xcap::Monitor;
 use tauri::AppHandle;
 use tauri::http;
 
-pub struct ScreenshotPlugin;
+use crate::plugins::Plugin;
+
+pub struct ScreenshotPlugin {
+    running: Arc<Mutex<bool>>,
+}
 
 impl ScreenshotPlugin {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            running: Arc::new(Mutex::new(false)),
+        }
     }
-    pub fn start(&mut self) {
+}
+
+impl Plugin for ScreenshotPlugin {
+    fn start(&mut self) {
+        *self.running.lock().unwrap() = true;
+        let running = Arc::clone(&self.running);
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
         tokio::spawn(async move {
             loop {
+                if !*running.lock().unwrap() {
+                    break;
+                }
                 interval.tick().await;
                 take_screenshot();
             }
         });
+    }
+
+    fn stop(&mut self) {
+        *self.running.lock().unwrap() = false;
     }
 }
 

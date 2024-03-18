@@ -1,8 +1,10 @@
 use active_win_pos_rs::get_active_window;
 use anyhow::Result;
+use std::sync::{Arc, Mutex};
 use sqlx;
 
 use crate::app::db;
+use crate::plugins::Plugin;
 
 #[derive(Debug)]
 pub struct ApplicationLog {
@@ -15,21 +17,36 @@ pub struct ApplicationLog {
     height: i64,
 }
 
-pub struct ApplicationPlugin;
+pub struct ApplicationPlugin {
+    running: Arc<Mutex<bool>>,
+}
 
 impl ApplicationPlugin {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            running: Arc::new(Mutex::new(false)),
+        }
     }
+}
 
-    pub fn start(&mut self) {
+impl Plugin for ApplicationPlugin {
+    fn start(&mut self) {
+        *self.running.lock().unwrap() = true;
+        let running = Arc::clone(&self.running);
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
         tokio::spawn(async move {
             loop {
+                if !*running.lock().unwrap() {
+                    break;
+                }
                 interval.tick().await;
                 check_application().await;
             }
         });
+    }
+
+    fn stop(&mut self) {
+        *self.running.lock().unwrap() = false;
     }
 }
 
