@@ -5,8 +5,10 @@ use std::error::Error;
 use std::fs;
 use std::path::Path;
 use xcap::Monitor;
-use tauri::{App, AppHandle};
+use tauri::{App, AppHandle, Manager, State};
 use tauri::http;
+use tokio::select;
+use tokio_util::sync::CancellationToken;
 
 pub struct ScreenshotPlugin;
 
@@ -14,12 +16,20 @@ impl ScreenshotPlugin {
     pub fn new() -> Self {
         Self {}
     }
-    pub fn start(&mut self) {
+    pub fn start(&mut self, app: &App) {
+        let app = app.handle();
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
         tokio::spawn(async move {
+            let cancel_token: State<CancellationToken> = app.state();
             loop {
-                interval.tick().await;
-                take_screenshot();
+                select! {
+                    _ = cancel_token.cancelled() => {
+                        break;
+                    }
+                    _ = interval.tick() => {
+                        take_screenshot();
+                    }
+                }
             }
         });
     }

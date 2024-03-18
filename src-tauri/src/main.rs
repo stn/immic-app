@@ -5,13 +5,14 @@ mod app;
 mod plugins;
 
 use std::sync::Mutex;
+use tauri::{Manager, State};
+use tokio_util::sync::CancellationToken;
+
 use app::tray;
 use app::setting::Setting;
-
-use tauri::{Manager, State};
-
-use crate::plugins::application::ApplicationPlugin;
-use crate::plugins::screen::ScreenshotPlugin;
+use plugins::application::ApplicationPlugin;
+use plugins::filelog::FilelogPlugin;
+use plugins::screen::ScreenshotPlugin;
 
 use app::db;
 
@@ -40,21 +41,29 @@ async fn main() {
         ])
         .register_uri_scheme_protocol(
             "iss",
-             move |app, request| { plugins::screen::handle_iss_protocol(&app, &request) }
-            )
+             move |app, request| {
+                plugins::screen::handle_iss_protocol(&app, &request)
+            }
+        )
+        .manage(CancellationToken::new())
         .manage(Mutex::new(ScreenshotPlugin::new()))
         .manage(Mutex::new(ApplicationPlugin::new()))
+        .manage(Mutex::new(FilelogPlugin::new()))
         .setup(|app| {
             {
                 app.manage(Mutex::new(Setting::new(app)));
             }
             {
                 let application: State<Mutex<ApplicationPlugin>> = app.state();
-                application.lock().unwrap().start();
+                application.lock().unwrap().start(app);
+            }
+            {
+                let filelog: State<Mutex<FilelogPlugin>> = app.state();
+                filelog.lock().unwrap().start(app);
             }
             {
                 let screenshot: State<Mutex<ScreenshotPlugin>> = app.state();
-                screenshot.lock().unwrap().start();
+                screenshot.lock().unwrap().start(app);
             }
             Ok(())
         })
