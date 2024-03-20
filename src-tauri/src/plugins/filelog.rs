@@ -57,7 +57,7 @@ impl Plugin for FilelogPlugin {
         wx.config.pathset(["f:\\"]);
 
         tokio::spawn(async move {
-            wx.main().await.unwrap();
+            wx.main().await.unwrap().unwrap();
         });
 
         // let (tx, mut rx) = mpsc::channel(256);
