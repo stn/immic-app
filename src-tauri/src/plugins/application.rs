@@ -1,9 +1,9 @@
 use active_win_pos_rs::get_active_window;
-use anyhow::Result;
+use anyhow::{bail, Result};
 use std::sync::{Arc, Mutex};
 use sqlx;
 
-use crate::app::{self, db};
+use crate::app::db;
 use crate::plugins::Plugin;
 
 #[derive(Debug)]
@@ -40,12 +40,27 @@ impl Plugin for ApplicationPlugin {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
         let app = self;
         tokio::spawn(async move {
+            let mut last_info = None;
             loop {
                 if !*running.lock().unwrap() {
                     break;
                 }
                 interval.tick().await;
-                check_application().await;
+                let info = check_application().await;
+
+                // check if the last info is the same as the current info
+                if info == last_info {
+                    println!("check_application: same as last info");
+                    continue;
+                }
+
+                if let Some(info) = info {
+                    println!("check_application: {:?}", info);
+                    info.insert().await.unwrap_or_else(|e| {
+                        println!("check_application: Error on inserting application_info: {:?}", e);
+                    });
+                    last_info = Some(info);
+                }
             }
         });
     }
@@ -55,11 +70,11 @@ impl Plugin for ApplicationPlugin {
     }
 }
 
-async fn check_application() {
+async fn check_application() -> Option<ApplicationInfo> {
     println!("check_application");
     match get_active_window() {
         Ok(win) => {
-            println!("active_window: {:?}", win);
+            // println!("active_window: {:?}", win);
             let info = ApplicationInfo {
                 process_id: win.process_id as i64,
                 name: win.app_name,
@@ -69,16 +84,11 @@ async fn check_application() {
                 width: win.position.width as i64,
                 height: win.position.height as i64,
             };
-
-            // TODO: check if the last info is the same as the current info
-
-            info.insert().await.unwrap_or_else(|e| {
-                println!("check_application: Error on inserting application_info: {:?}", e);
-            });
+            Some(info)
         },
-        Err(e) => {
-            println!("get_active_window: {:?}", e);
-        },
+        Err(_) => {
+            None
+        }
     }
 }
 
