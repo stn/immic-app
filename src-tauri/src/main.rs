@@ -3,6 +3,7 @@
 
 mod app;
 mod plugins;
+mod server;
 
 use std::sync::Mutex;
 use tauri::{Manager, State};
@@ -26,6 +27,9 @@ async fn main() {
     // Enable gpu hardware acceleration on Windows
     //refer to this issue: https://github.com/tauri-apps/tauri/issues/4891
     std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--ignore-gpu-blocklist");
+    std::env::set_var("RUST_LOG", "info");
+    // std::env::set_var("RUST_LOG", "actix_web=debug");
+    env_logger::init();
 
     tauri::async_runtime::set(tokio::runtime::Handle::current());
 
@@ -62,6 +66,15 @@ async fn main() {
             {
                 let screenshot: State<Mutex<ScreenshotPlugin>> = app.state();
                 screenshot.lock().unwrap().start();
+            }
+            {
+                // server
+                let handle = Box::new(app.handle());
+                std::thread::spawn(move || {
+                    server::init(*handle).unwrap_or_else(|e| {
+                        eprintln!("Server error: {}", e);
+                    });
+                });
             }
             Ok(())
         })
