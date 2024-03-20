@@ -3,7 +3,6 @@
 CREATE TABLE IF NOT EXISTS application (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     eventId INTEGER,
-    kind TEXT,
     processId INTEGER,
     name TEXT,
     title TEXT,

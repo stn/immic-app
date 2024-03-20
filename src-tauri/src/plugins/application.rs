@@ -3,11 +3,15 @@ use anyhow::Result;
 use std::sync::{Arc, Mutex};
 use sqlx;
 
-use crate::app::db;
+use crate::app::{self, db};
 use crate::plugins::Plugin;
 
 #[derive(Debug)]
 pub struct ApplicationLog {
+    id: i64,
+    eventId: i64,
+    timestamp: i64,
+    date: String,
     process_id: i64,
     name: String,
     title: String,
@@ -22,8 +26,8 @@ pub struct ApplicationPlugin {
 }
 
 impl ApplicationPlugin {
-    pub fn new() -> Self {
-        Self {
+    pub fn new() -> ApplicationPlugin {
+        ApplicationPlugin {
             running: Arc::new(Mutex::new(false)),
         }
     }
@@ -34,6 +38,7 @@ impl Plugin for ApplicationPlugin {
         *self.running.lock().unwrap() = true;
         let running = Arc::clone(&self.running);
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+        let app = self;
         tokio::spawn(async move {
             loop {
                 if !*running.lock().unwrap() {
@@ -51,11 +56,11 @@ impl Plugin for ApplicationPlugin {
 }
 
 async fn check_application() {
-    println!("application");
+    println!("check_application");
     match get_active_window() {
         Ok(win) => {
-            // println!("active_window: {:?}", win);
-            let log = ApplicationLog {
+            println!("active_window: {:?}", win);
+            let info = ApplicationInfo {
                 process_id: win.process_id as i64,
                 name: win.app_name,
                 title: win.title,
@@ -64,31 +69,53 @@ async fn check_application() {
                 width: win.position.width as i64,
                 height: win.position.height as i64,
             };
-            println!("application log: {:?}", log);
-            insert_application_log(log).await.unwrap_or_else(|e| {
-                println!("check_application: Error on insert_application_log: {:?}", e);
+
+            // TODO: check if the last info is the same as the current info
+
+            info.insert().await.unwrap_or_else(|e| {
+                println!("check_application: Error on inserting application_info: {:?}", e);
             });
         },
         Err(e) => {
-            println!("active_window: {:?}", e);
+            println!("get_active_window: {:?}", e);
         },
     }
 }
 
-async fn insert_application_log(log: ApplicationLog) -> Result<()> {
-    let pool = db::pool();
-    sqlx::query(
-        "INSERT INTO application (eventId, kind, processId, name, title, x, y, width, height) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    )
-        .bind(1)
-        .bind("active")
-        .bind(log.process_id)
-        .bind(log.name)
-        .bind(log.title)
-        .bind(log.x)
-        .bind(log.y)
-        .bind(log.width)
-        .bind(log.height)
-        .execute(pool).await?;
-    Ok(())
+#[derive(Debug,PartialEq)]
+struct ApplicationInfo {
+    process_id: i64,
+    name: String,
+    title: String,
+    x: i64,
+    y: i64,
+    width: i64,
+    height: i64,
+}
+
+impl ApplicationInfo {
+    async fn insert(&self) -> Result<()> {
+        let timestamp = chrono::Utc::now();
+
+        let event_id = db::insert_eventlog(timestamp, "application").await?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO application (eventId, processId, name, title, x, y, width, height)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            "#
+        )
+        .bind(event_id)
+        .bind(self.process_id)
+        .bind(&self.name)
+        .bind(&self.title)
+        .bind(self.x)
+        .bind(self.y)
+        .bind(self.width)
+        .bind(self.height)
+        .execute(db::pool())
+        .await?;
+
+        Ok(())
+    }
 }
