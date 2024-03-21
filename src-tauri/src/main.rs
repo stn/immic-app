@@ -39,6 +39,9 @@ async fn main() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
             greet,
+            db::list_eventlog_dates,
+            db::list_eventlog_on,
+            plugins::application::list_applications,
             plugins::screen::list_dates,
             plugins::screen::list_screens,
         ])

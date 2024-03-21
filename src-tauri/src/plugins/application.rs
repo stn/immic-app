@@ -148,7 +148,7 @@ async fn insert_ref(id: i64) -> Result<i64> {
 
 // ApplicationLog
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize)]
 pub struct ApplicationLog {
     pub id: i64,
     pub event_id: i64,
@@ -164,13 +164,15 @@ pub struct ApplicationLog {
     pub ref_id: Option<i64>,
 }
 
-pub async fn list_application(date: &str) -> Result<Vec<ApplicationLog>> {
+#[tauri::command]
+pub async fn list_applications(date: String) -> Result<Vec<ApplicationLog>, String> {
+    println!("list_applications: date: {}", date);
     let application_logs = sqlx::query_as::<_,
       (i64, i64, String, String, i64, i64, Option<i64>, Option<String>, Option<String>, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>)>(
         r#"
         SELECT e.id, e.timestamp, e.date, e.kind, a.id, a.event_id, a.process_id, a.name, a.title, a.x, a.y, a.width, a.height, a.ref_id
         FROM event e
-        INNER JOIN application ON e.id = a.event_id
+        INNER JOIN application a ON e.id = a.event_id
         WHERE e.kind = ? AND e.date = ?
         ORDER BY event_id
         "#
@@ -178,7 +180,8 @@ pub async fn list_application(date: &str) -> Result<Vec<ApplicationLog>> {
     .bind(KIND)
     .bind(date)
     .fetch_all(db::pool())
-    .await?
+    .await
+    .unwrap_or(Vec::new())
     .iter()
     .map(|row| {
         let (event_id, timestamp, date, _, id, _, process_id, name, title, x, y, width, height, ref_id) = row;
@@ -198,5 +201,6 @@ pub async fn list_application(date: &str) -> Result<Vec<ApplicationLog>> {
         }
     })
     .collect();
+    println!("list_applications: application_logs: {:?}", application_logs);
     Ok(application_logs)
 }

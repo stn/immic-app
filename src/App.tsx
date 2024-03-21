@@ -8,6 +8,7 @@ function App() {
   const [name, setName] = useState("");
   const [dates, setDates] = useState<string[]>([]);
   const [date, setDate] = useState<string>('');
+  const [applications, setApplications] = useState([]);  // TODO set type
   const [screens, setScreens] = useState<string[]>([]);
 
   async function greet() {
@@ -16,7 +17,11 @@ function App() {
   }
 
   async function listDates() {
-    setDates(await invoke("list_dates"));
+    setDates(await invoke("list_eventlog_dates"));
+  }
+
+  async function listApplications(date: string) {
+    setApplications(await invoke("list_applications", { date }));
   }
 
   async function listScreens(date: string) {
@@ -62,10 +67,16 @@ function App() {
         {dates.map((date) => (
           <button key={date} onClick={() => {
             setDate(date);
+            listApplications(date);
             listScreens(date);
           }}>
             {date}
           </button>
+        ))}
+      </div>
+      <div>
+        {applications.map((app) => (
+          <div key={app.id}>{app.id}: {app.name}</div>
         ))}
       </div>
       <div>

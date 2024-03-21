@@ -4,7 +4,7 @@ use once_cell::sync::Lazy;
 use sqlx::Sqlite;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize)]
 pub struct EventLog {
     pub id: i64,
     pub timestamp: i64,
@@ -63,7 +63,8 @@ pub async fn insert_eventlog(datetime: DateTime<Utc>, kind: &str) -> Result<i64>
     Ok(result.last_insert_rowid())
 }
 
-pub async fn list_eventlog_dates() -> Result<Vec<String>> {
+#[tauri::command]
+pub async fn list_eventlog_dates() -> Result<Vec<String>, String> {
     let result: Vec<String> = sqlx::query_as::<_, (String,)>(r#"
         SELECT DISTINCT date
         FROM event
@@ -71,7 +72,8 @@ pub async fn list_eventlog_dates() -> Result<Vec<String>> {
         "#
     )
     .fetch_all(pool())
-    .await?
+    .await
+    .unwrap_or(Vec::new())
     .iter()
     .map(|row| {
         let (date,) = row;
@@ -81,7 +83,8 @@ pub async fn list_eventlog_dates() -> Result<Vec<String>> {
     Ok(result)
 }
 
-pub async fn list_eventlog(date: &str) -> Result<Vec<EventLog>> {
+#[tauri::command]
+pub async fn list_eventlog_on(date: String) -> Result<Vec<EventLog>, String> {
     let result: Vec<EventLog> = sqlx::query_as::<_, (i64, i64, String, String)>(
         r#"
         SELECT id, timestamp, date, kind
@@ -92,7 +95,8 @@ pub async fn list_eventlog(date: &str) -> Result<Vec<EventLog>> {
     )
     .bind(date)
     .fetch_all(pool())
-    .await?
+    .await
+    .unwrap_or(Vec::new())
     .iter()
     .map(|row| {
         let (id, timestamp, date, kind) = row;
@@ -107,29 +111,29 @@ pub async fn list_eventlog(date: &str) -> Result<Vec<EventLog>> {
     Ok(result)
 }
 
-pub async fn list_eventlog_by(date: &str, kind: &str) -> Result<Vec<EventLog>> {
-    let result: Vec<EventLog> = sqlx::query_as::<_, (i64, i64, String)>(
-        r#"
-        SELECT id, timestamp, date
-        FROM event
-        WHERE date = ? AND kind = ?
-        ORDER BY id
-        "#
-    )
-    .bind(date)
-    .bind(kind)
-    .fetch_all(pool())
-    .await?
-    .iter()
-    .map(|row| {
-        let (id, timestamp, date) = row;
-        EventLog {
-            id: *id,
-            timestamp: *timestamp,
-            date: date.clone(),
-            kind: kind.to_string(),
-        }
-    })
-    .collect();
-    Ok(result)
-}
+// pub async fn list_eventlog_by(date: &str, kind: &str) -> Result<Vec<EventLog>> {
+//     let result: Vec<EventLog> = sqlx::query_as::<_, (i64, i64, String)>(
+//         r#"
+//         SELECT id, timestamp, date
+//         FROM event
+//         WHERE date = ? AND kind = ?
+//         ORDER BY id
+//         "#
+//     )
+//     .bind(date)
+//     .bind(kind)
+//     .fetch_all(pool())
+//     .await?
+//     .iter()
+//     .map(|row| {
+//         let (id, timestamp, date) = row;
+//         EventLog {
+//             id: *id,
+//             timestamp: *timestamp,
+//             date: date.clone(),
+//             kind: kind.to_string(),
+//         }
+//     })
+//     .collect();
+//     Ok(result)
+// }
