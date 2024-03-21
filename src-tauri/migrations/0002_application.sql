@@ -2,7 +2,7 @@
 --- Application
 CREATE TABLE IF NOT EXISTS application (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    event_id INTEGER,
+    event_id INTEGER NOT NULL,
     process_id INTEGER,
     name TEXT,
     title TEXT,

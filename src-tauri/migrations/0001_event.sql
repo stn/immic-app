@@ -1,7 +1,7 @@
 --- Events
 CREATE TABLE IF NOT EXISTS event (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp INTEGER,
-    date TEXT,
-    kind TEXT
+    timestamp INTEGER NOT NULL,
+    date TEXT NOT NULL,
+    kind TEX NOT NULL
 );

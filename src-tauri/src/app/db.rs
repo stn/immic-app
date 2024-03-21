@@ -6,10 +6,10 @@ use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, S
 
 #[derive(Debug)]
 pub struct EventLog {
-    id: i64,
-    timestamp: i64,
-    date: String,
-    kind: String,
+    pub id: i64,
+    pub timestamp: i64,
+    pub date: String,
+    pub kind: String,
 }
 
 static POOL: Lazy<sqlx::Pool<Sqlite>> = Lazy::new(|| {
@@ -61,4 +61,75 @@ pub async fn insert_eventlog(datetime: DateTime<Utc>, kind: &str) -> Result<i64>
     .bind(kind)
     .execute(pool).await?;
     Ok(result.last_insert_rowid())
+}
+
+pub async fn list_eventlog_dates() -> Result<Vec<String>> {
+    let result: Vec<String> = sqlx::query_as::<_, (String,)>(r#"
+        SELECT DISTINCT date
+        FROM event
+        ORDER BY date DESC
+        "#
+    )
+    .fetch_all(pool())
+    .await?
+    .iter()
+    .map(|row| {
+        let (date,) = row;
+        date.clone()
+    })
+    .collect();
+    Ok(result)
+}
+
+pub async fn list_eventlog(date: &str) -> Result<Vec<EventLog>> {
+    let result: Vec<EventLog> = sqlx::query_as::<_, (i64, i64, String, String)>(
+        r#"
+        SELECT id, timestamp, date, kind
+        FROM event
+        WHERE date = ?
+        ORDER BY id
+        "#
+    )
+    .bind(date)
+    .fetch_all(pool())
+    .await?
+    .iter()
+    .map(|row| {
+        let (id, timestamp, date, kind) = row;
+        EventLog {
+            id: *id,
+            timestamp: *timestamp,
+            date: date.clone(),
+            kind: kind.clone(),
+        }
+    })
+    .collect();
+    Ok(result)
+}
+
+pub async fn list_eventlog_by(date: &str, kind: &str) -> Result<Vec<EventLog>> {
+    let result: Vec<EventLog> = sqlx::query_as::<_, (i64, i64, String)>(
+        r#"
+        SELECT id, timestamp, date
+        FROM event
+        WHERE date = ? AND kind = ?
+        ORDER BY id
+        "#
+    )
+    .bind(date)
+    .bind(kind)
+    .fetch_all(pool())
+    .await?
+    .iter()
+    .map(|row| {
+        let (id, timestamp, date) = row;
+        EventLog {
+            id: *id,
+            timestamp: *timestamp,
+            date: date.clone(),
+            kind: kind.to_string(),
+        }
+    })
+    .collect();
+    Ok(result)
 }

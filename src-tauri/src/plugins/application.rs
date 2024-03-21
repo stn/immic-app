@@ -1,25 +1,12 @@
 use active_win_pos_rs::get_active_window;
-use anyhow::{bail, Result};
+use anyhow::Result;
 use std::sync::{Arc, Mutex};
 use sqlx;
 
 use crate::app::db;
 use crate::plugins::Plugin;
 
-#[derive(Debug)]
-pub struct ApplicationLog {
-    id: i64,
-    event_id: i64,
-    timestamp: i64,
-    date: String,
-    process_id: i64,
-    name: String,
-    title: String,
-    x: i64,
-    y: i64,
-    width: i64,
-    height: i64,
-}
+const KIND: &str = "application";
 
 pub struct ApplicationPlugin {
     running: Arc<Mutex<bool>>,
@@ -117,7 +104,7 @@ struct ApplicationInfo {
 impl ApplicationInfo {
     async fn insert(&self) -> Result<i64> {
         let timestamp = chrono::Utc::now();
-        let event_id = db::insert_eventlog(timestamp, "application").await?;
+        let event_id = db::insert_eventlog(timestamp, KIND).await?;
 
         let result = sqlx::query(
             r#"
@@ -142,7 +129,7 @@ impl ApplicationInfo {
 
 async fn insert_ref(id: i64) -> Result<i64> {
     let timestamp = chrono::Utc::now();
-    let event_id = db::insert_eventlog(timestamp, "application").await?;
+    let event_id = db::insert_eventlog(timestamp, KIND).await?;
 
     let result = sqlx::query(
         r#"
@@ -156,4 +143,60 @@ async fn insert_ref(id: i64) -> Result<i64> {
     .await?;
 
     Ok(result.last_insert_rowid())
+}
+
+
+// ApplicationLog
+
+#[derive(Debug)]
+pub struct ApplicationLog {
+    pub id: i64,
+    pub event_id: i64,
+    pub timestamp: i64,
+    pub date: String,
+    pub process_id: Option<i64>,
+    pub name: Option<String>,
+    pub title: Option<String>,
+    pub x: Option<i64>,
+    pub y: Option<i64>,
+    pub width: Option<i64>,
+    pub height: Option<i64>,
+    pub ref_id: Option<i64>,
+}
+
+pub async fn list_application(date: &str) -> Result<Vec<ApplicationLog>> {
+    let application_logs = sqlx::query_as::<_,
+      (i64, i64, String, String, i64, i64, Option<i64>, Option<String>, Option<String>, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>)>(
+        r#"
+        SELECT e.id, e.timestamp, e.date, e.kind, a.id, a.event_id, a.process_id, a.name, a.title, a.x, a.y, a.width, a.height, a.ref_id
+        FROM event e
+        INNER JOIN application ON e.id = a.event_id
+        WHERE e.kind = ? AND e.date = ?
+        ORDER BY event_id
+        "#
+    )
+    .bind(KIND)
+    .bind(date)
+    .fetch_all(db::pool())
+    .await?
+    .iter()
+    .map(|row| {
+        let (event_id, timestamp, date, _, id, _, process_id, name, title, x, y, width, height, ref_id) = row;
+        ApplicationLog {
+            id: *id,
+            event_id: *event_id,
+            timestamp: *timestamp,
+            date: date.clone(),
+            process_id: *process_id,
+            name: name.clone(),
+            title: title.clone(),
+            x: *x,
+            y: *y,
+            width: *width,
+            height: *height,
+            ref_id: *ref_id,
+        }
+    })
+    .collect();
+    Ok(application_logs)
 }
