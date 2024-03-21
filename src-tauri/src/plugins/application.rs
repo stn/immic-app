@@ -9,7 +9,7 @@ use crate::plugins::Plugin;
 #[derive(Debug)]
 pub struct ApplicationLog {
     id: i64,
-    eventId: i64,
+    event_id: i64,
     timestamp: i64,
     date: String,
     process_id: i64,
@@ -41,25 +41,36 @@ impl Plugin for ApplicationPlugin {
         let app = self;
         tokio::spawn(async move {
             let mut last_info = None;
+            let mut last_id = -1;
             loop {
                 if !*running.lock().unwrap() {
                     break;
                 }
                 interval.tick().await;
+
                 let info = check_application().await;
 
                 // check if the last info is the same as the current info
                 if info == last_info {
                     println!("check_application: same as last info");
+                    if let Err(e) = insert_ref(last_id).await {
+                        println!("check_application: Error on inserting ref: {:?}", e);
+                    }
                     continue;
                 }
 
                 if let Some(info) = info {
                     println!("check_application: {:?}", info);
-                    info.insert().await.unwrap_or_else(|e| {
-                        println!("check_application: Error on inserting application_info: {:?}", e);
-                    });
-                    last_info = Some(info);
+                    let id = info.insert().await;
+                    match id {
+                        Ok(id) => {
+                            last_info = Some(info);
+                            last_id = id;
+                        },
+                        Err(e) => {
+                            println!("check_application: Error on inserting application_info: {:?}", e);
+                        },
+                    }
                 }
             }
         });
@@ -104,14 +115,13 @@ struct ApplicationInfo {
 }
 
 impl ApplicationInfo {
-    async fn insert(&self) -> Result<()> {
+    async fn insert(&self) -> Result<i64> {
         let timestamp = chrono::Utc::now();
-
         let event_id = db::insert_eventlog(timestamp, "application").await?;
 
-        sqlx::query(
+        let result = sqlx::query(
             r#"
-            INSERT INTO application (eventId, processId, name, title, x, y, width, height)
+            INSERT INTO application (event_id, process_id, name, title, x, y, width, height)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             "#
         )
@@ -126,6 +136,24 @@ impl ApplicationInfo {
         .execute(db::pool())
         .await?;
 
-        Ok(())
+        Ok(result.last_insert_rowid())
     }
+}
+
+async fn insert_ref(id: i64) -> Result<i64> {
+    let timestamp = chrono::Utc::now();
+    let event_id = db::insert_eventlog(timestamp, "application").await?;
+
+    let result = sqlx::query(
+        r#"
+        INSERT INTO application (event_id, ref_id)
+        VALUES (?, ?)
+        "#
+    )
+    .bind(event_id)
+    .bind(id)
+    .execute(db::pool())
+    .await?;
+
+    Ok(result.last_insert_rowid())
 }
