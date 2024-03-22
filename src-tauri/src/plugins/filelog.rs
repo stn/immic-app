@@ -1,22 +1,13 @@
-use std::sync::{Arc, Mutex};
-// use sqlx;
-
-// use watchexec_signals::Signal;
+use anyhow::Result;
+use std::{fmt, sync::{Arc, Mutex}};
+use sqlx;
+use tokio::sync::mpsc;
 use watchexec::Watchexec;
 
-// use crate::app::db;
+use crate::app::db;
 use crate::plugins::Plugin;
 
-// #[derive(Debug)]
-// pub struct ApplicationLog {
-//     process_id: i64,
-//     name: String,
-//     title: String,
-//     x: i64,
-//     y: i64,
-//     width: i64,
-//     height: i64,
-// }
+const KIND: &str = "file";
 
 pub struct FilelogPlugin {
     running: Arc<Mutex<bool>>,
@@ -33,17 +24,36 @@ impl FilelogPlugin {
 impl Plugin for FilelogPlugin {
     fn start(&mut self) {
         println!("filelog");
+
+        let (tx, mut rx) = mpsc::channel::<Vec<FileInfo>>(32);
+
+        let manager = tokio::spawn(async move {
+            while let Some(infos) = rx.recv().await {
+                println!("Received file_infos: {:?}", infos);
+                for info in infos.iter() {
+                    println!("filelog: {:?}", info);
+                    match info.insert().await {
+                        Ok(id) => {
+                            println!("filelog: inserted id: {:?}", id);
+                        },
+                        Err(e) => {
+                            eprintln!("Error on insert filelog: {:?}", e);
+                        },
+                    }
+                }
+            }
+        });
+
         *self.running.lock().unwrap() = true;
         let running = Arc::clone(&self.running);
         let wx = Watchexec::new(move |mut action| {
             if !*running.lock().unwrap() {
                 action.quit();
+                return action;
             }
 
-            // print any events
-            for event in action.events.iter() {
-                eprintln!("EVENT: {event:?}");
-            }
+            let infos: Vec<FileInfo> = action.events.iter().filter_map(event_to_file_info).collect();
+            tx.try_send(infos);
 
             // // if Ctrl-C is received, quit
             // if action.signals().any(|sig| sig == Signal::Interrupt) {
@@ -144,3 +154,113 @@ impl Plugin for FilelogPlugin {
 //         .execute(pool).await?;
 //     Ok(())
 // }
+
+#[derive(Debug,PartialEq)]
+struct FileInfo {
+    kind: FileKind,
+    path: String,
+    file_type: FileType,
+}
+
+impl FileInfo {
+    async fn insert(&self) -> Result<i64> {
+        let timestamp = chrono::Utc::now();
+        let event_id = db::insert_eventlog(timestamp, KIND).await?;
+
+        let result = sqlx::query(
+            r#"
+            INSERT INTO file (event_id, kind, path, file_type)
+            VALUES (?, ?, ?, ?)
+            "#
+        )
+        .bind(event_id)
+        .bind(&self.kind.to_string())
+        .bind(&self.path)
+        .bind(&self.file_type.to_string())
+        .execute(db::pool())
+        .await?;
+
+        Ok(result.last_insert_rowid())
+    }
+}
+
+#[derive(Debug,PartialEq)]
+enum FileKind {
+    Access,
+    Create,
+    Modify,
+    Remove,
+}
+
+impl fmt::Display for FileKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            FileKind::Access => write!(f, "access"),
+            FileKind::Create => write!(f, "create"),
+            FileKind::Modify => write!(f, "modify"),
+            FileKind::Remove => write!(f, "remove"),
+        }
+    }
+}
+
+#[derive(Debug,PartialEq)]
+enum FileType {
+    File,
+    Dir,
+    Symlink,
+    Other,
+}
+
+impl fmt::Display for FileType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            FileType::File => write!(f, "file"),
+            FileType::Dir => write!(f, "dir"),
+            FileType::Symlink => write!(f, "symlink"),
+            FileType::Other => write!(f, ""),
+        }
+    }
+}
+
+fn event_to_file_info(event: &watchexec_events::Event) -> Option<FileInfo> {
+    let mut source = None;
+    let mut kind: Option<FileKind> = None;
+    let mut p: Option<String> = None;
+    let mut ft: Option<FileType> = None;
+    for tag in event.tags.iter() {
+        match tag {
+            watchexec_events::Tag::Source(s) => source = Some(s),
+            watchexec_events::Tag::FileEventKind(k) => {
+                match k {
+                    watchexec_events::filekind::FileEventKind::Access(_) => kind = Some(FileKind::Access),
+                    watchexec_events::filekind::FileEventKind::Create(_) => kind = Some(FileKind::Create),
+                    watchexec_events::filekind::FileEventKind::Modify(_) => kind = Some(FileKind::Modify),
+                    watchexec_events::filekind::FileEventKind::Remove(_) => kind = Some(FileKind::Remove),
+                    _ => {
+                        eprintln!("Unknown file event kind: {:?}", k)
+                    }
+                }
+            },
+            watchexec_events::Tag::Path { path, file_type } => {
+                p = Some(path.to_string_lossy().to_string());
+                match file_type {
+                    Some(watchexec_events::FileType::File) => ft = Some(FileType::File),
+                    Some(watchexec_events::FileType::Dir) => ft = Some(FileType::Dir),
+                    Some(watchexec_events::FileType::Symlink) => ft = Some(FileType::Symlink),
+                    Some(watchexec_events::FileType::Other) => ft = Some(FileType::Other),
+                    None => {}
+                }
+            },
+            _ => {}
+        }
+    }
+    if let (Some(watchexec_events::Source::Filesystem), Some(kind), Some(path)) = (source, kind, p) {
+        Some(FileInfo {
+            kind,
+            path,
+            file_type: ft.unwrap_or(FileType::Other),
+        })
+    } else {
+        None
+    }
+}

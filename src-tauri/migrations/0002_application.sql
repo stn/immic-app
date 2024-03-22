@@ -1,4 +1,3 @@
-
 --- Application
 CREATE TABLE IF NOT EXISTS application (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

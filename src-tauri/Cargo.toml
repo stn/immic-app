@@ -30,6 +30,7 @@ xcap = "0.0.4"
 watchexec = "3.0.1"
 actix-cors = "0.7.0"
 env_logger = "0.11.3"
+watchexec-events = "2.0.1"
 
 [features]
 # this feature is used for production builds or when `devPath` points to the filesystem
