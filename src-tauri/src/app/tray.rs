@@ -22,7 +22,7 @@ pub fn generate_system_tray() -> SystemTray {
     let quit = CustomMenuItem::new("quit".to_string(), "Quit");
     let show = CustomMenuItem::new("show".to_string(), "Show");
     let hide = CustomMenuItem::new("hide".to_string(), "Hide");
-    let preferences = CustomMenuItem::new("Preferences".to_string(), "Preferences");
+    let preferences = CustomMenuItem::new("preferences".to_string(), "Preferences");
     let tray_menu = SystemTrayMenu::new()
         .add_item(show)
         .add_item(hide)
@@ -65,7 +65,7 @@ pub fn system_tray_event(app: &AppHandle, event: SystemTrayEvent) {
                             window.show().unwrap();
                         }
                     } else {
-                        let window = tauri::WindowBuilder::new(
+                        tauri::WindowBuilder::new(
                             app,
                             "main".to_string(),
                             tauri::WindowUrl::App("index.html".into()),
@@ -75,6 +75,23 @@ pub fn system_tray_event(app: &AppHandle, event: SystemTrayEvent) {
                 "hide" => {
                     let window = app.get_window("main").unwrap();
                     window.hide().unwrap();
+                }
+                "preferences" => {
+                    if let Some(window) = app.get_window("preferences") {
+                        if window.is_minimized().unwrap() {
+                            window.unminimize().unwrap();
+                        } else if window.is_visible().unwrap() {
+                            window.set_focus().unwrap();
+                        } else {
+                            window.show().unwrap();
+                        }
+                    } else {
+                        tauri::WindowBuilder::new(
+                            app,
+                            "preferences".to_string(),
+                            tauri::WindowUrl::App("preferences.html".into()),
+                        ).build().unwrap();
+                    }
                 }
                 _ => {}
             }
