@@ -9,6 +9,7 @@ function App() {
   const [dates, setDates] = useState<string[]>([]);
   const [date, setDate] = useState<string>('');
   const [applications, setApplications] = useState([]);  // TODO set type
+  const [browsers, setBrowsers] = useState([]);  // TODO set type
   const [screens, setScreens] = useState<string[]>([]);
 
   async function greet() {
@@ -22,6 +23,10 @@ function App() {
 
   async function listApplications(date: string) {
     setApplications(await invoke("list_applications", { date }));
+  }
+
+  async function listBrowsers(date: string) {
+    setBrowsers(await invoke("list_browsers", { date }));
   }
 
   async function listScreens(date: string) {
@@ -68,6 +73,7 @@ function App() {
           <button key={date} onClick={() => {
             setDate(date);
             listApplications(date);
+            listBrowsers(date);
             listScreens(date);
           }}>
             {date}
@@ -77,6 +83,11 @@ function App() {
       <div>
         {applications.map((app) => (
           <div key={app.id}>{app.id}: {app.name}</div>
+        ))}
+      </div>
+      <div>
+        {browsers.map((browser) => (
+          <div key={browser.id}>{browser.id}: {browser.title}</div>
         ))}
       </div>
       <div>

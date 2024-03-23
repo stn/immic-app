@@ -4,7 +4,7 @@ use actix_cors::Cors;
 use actix_web::{http, middleware, web, App, HttpServer};
 use tauri::AppHandle;
 
-mod api;
+use crate::plugins::browser;
 
 struct TauriAppState {
     app: Mutex<AppHandle>,
@@ -31,7 +31,7 @@ pub async fn init(app: AppHandle) -> std::io::Result<()> {
             .app_data(tauri_app.clone())
             .wrap(middleware::Logger::default())
             .wrap(cors)
-            .service(api::browserlog)
+            .service(browser::browserlog)
     })
     .bind(("127.0.0.1", 3294))?
     .run()

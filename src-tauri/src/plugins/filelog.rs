@@ -53,7 +53,7 @@ impl Plugin for FilelogPlugin {
             }
 
             let infos: Vec<FileInfo> = action.events.iter().filter_map(event_to_file_info).collect();
-            tx.try_send(infos);
+            tx.try_send(infos).unwrap();
 
             // // if Ctrl-C is received, quit
             // if action.signals().any(|sig| sig == Signal::Interrupt) {

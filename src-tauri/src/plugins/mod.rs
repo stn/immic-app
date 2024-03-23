@@ -1,4 +1,5 @@
 pub mod application;
+pub mod browser;
 pub mod filelog;
 pub mod screen;
 

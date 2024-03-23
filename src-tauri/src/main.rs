@@ -3,13 +3,13 @@
 
 mod app;
 mod plugins;
-mod server;
 
 use std::sync::Mutex;
 use tauri::{Manager, State};
 
 use app::db;
 use app::tray;
+use app::server;
 use app::setting::Setting;
 use plugins::Plugin;
 use plugins::application::ApplicationPlugin;
@@ -42,6 +42,7 @@ async fn main() {
             db::list_eventlog_dates,
             db::list_eventlog_on,
             plugins::application::list_applications,
+            plugins::browser::list_browsers,
             plugins::screen::list_dates,
             plugins::screen::list_screens,
         ])
