@@ -56,8 +56,21 @@ pub fn system_tray_event(app: &AppHandle, event: SystemTrayEvent) {
                     });
                 }
                 "show" => {
-                    let window = app.get_window("main").unwrap();
-                    window.show().unwrap();
+                    if let Some(window) = app.get_window("main") {
+                        if window.is_minimized().unwrap() {
+                            window.unminimize().unwrap();
+                        } else if window.is_visible().unwrap() {
+                            window.set_focus().unwrap();
+                        } else {
+                            window.show().unwrap();
+                        }
+                    } else {
+                        let window = tauri::WindowBuilder::new(
+                            app,
+                            "main".to_string(),
+                            tauri::WindowUrl::App("index.html".into()),
+                        ).build().unwrap();
+                    }
                 }
                 "hide" => {
                     let window = app.get_window("main").unwrap();
