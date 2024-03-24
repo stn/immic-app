@@ -31,7 +31,6 @@ async fn main() {
     //refer to this issue: https://github.com/tauri-apps/tauri/issues/4891
     std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--ignore-gpu-blocklist");
     std::env::set_var("RUST_LOG", "info");
-    // std::env::set_var("RUST_LOG", "actix_web=debug");
     env_logger::init();
 
     tauri::async_runtime::set(tokio::runtime::Handle::current());
