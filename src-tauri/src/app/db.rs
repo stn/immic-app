@@ -14,7 +14,7 @@ pub struct EventLog {
 
 static POOL: Lazy<sqlx::Pool<Sqlite>> = Lazy::new(|| {
     let options = SqliteConnectOptions::new()
-        .filename("../eventlog.db")
+        .filename(db_path())
         .create_if_missing(true)
         .journal_mode(SqliteJournalMode::Wal)
         .synchronous(SqliteSynchronous::Normal);
@@ -137,3 +137,13 @@ pub async fn list_eventlog_on(date: String) -> Result<Vec<EventLog>, String> {
 //     .collect();
 //     Ok(result)
 // }
+
+fn db_path() -> String {
+    if let Ok(path) = std::env::var("DB_PATH") {
+        println!("DB_PATH: {:?}", path);
+        if path != "" {
+            return path;
+        }
+    }
+    "../immic.db".to_string()
+}

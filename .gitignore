@@ -25,3 +25,4 @@ dist-ssr
 eventlog.db
 eventlog.db-shm
 eventlog.db-wal
+*.db

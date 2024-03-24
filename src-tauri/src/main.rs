@@ -5,6 +5,7 @@ mod app;
 mod plugins;
 
 use std::sync::Mutex;
+use dotenv::dotenv;
 use tauri::{Manager, State};
 
 use app::db;
@@ -24,6 +25,8 @@ fn greet(name: &str) -> String {
 
 #[tokio::main]
 async fn main() {
+    dotenv().ok();
+
     // Enable gpu hardware acceleration on Windows
     //refer to this issue: https://github.com/tauri-apps/tauri/issues/4891
     std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--ignore-gpu-blocklist");
