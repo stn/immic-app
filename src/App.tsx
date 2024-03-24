@@ -2,15 +2,16 @@ import { useState } from "react";
 import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/tauri";
 import "./App.css";
-import { ApplicationLog, BrowserLog } from "./events";
+import { ApplicationLog, BrowserLog, FileLog } from "./events";
 
 function App() {
   const [greetMsg, setGreetMsg] = useState("");
   const [name, setName] = useState("");
   const [dates, setDates] = useState<string[]>([]);
   const [date, setDate] = useState<string>('');
-  const [applications, setApplications] = useState<ApplicationLog[]>([]);  // TODO set type
-  const [browsers, setBrowsers] = useState<BrowserLog[]>([]);  // TODO set type
+  const [applications, setApplications] = useState<ApplicationLog[]>([]);
+  const [browsers, setBrowsers] = useState<BrowserLog[]>([]);
+  const [filelogs, setFilelogs] = useState<FileLog[]>([]);
   const [screens, setScreens] = useState<string[]>([]);
 
   async function greet() {
@@ -28,6 +29,10 @@ function App() {
 
   async function listBrowsers(date: string) {
     setBrowsers(await invoke("list_browsers", { date }));
+  }
+
+  async function listFilelogs(date: string) {
+    setFilelogs(await invoke("list_filelogs", { date }));
   }
 
   async function listScreens(date: string) {
@@ -75,6 +80,7 @@ function App() {
             setDate(date);
             listApplications(date);
             listBrowsers(date);
+            listFilelogs(date);
             listScreens(date);
           }}>
             {date}
@@ -89,6 +95,11 @@ function App() {
       <div>
         {browsers.map((browser) => (
           <div key={browser.id}>{browser.id}: {browser.title} {JSON.stringify(browser)}</div>
+        ))}
+      </div>
+      <div>
+        {filelogs.map((filelog) => (
+          <div key={filelog.id}>{filelog.id}: {JSON.stringify(filelog)}</div>
         ))}
       </div>
       <div>

@@ -1,6 +1,6 @@
 use anyhow::Result;
-use std::{fmt, sync::{Arc, Mutex}};
-use sqlx;
+use std::fmt;
+use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use watchexec::Watchexec;
 
@@ -217,7 +217,7 @@ impl fmt::Display for FileType {
             FileType::File => write!(f, "file"),
             FileType::Dir => write!(f, "dir"),
             FileType::Symlink => write!(f, "symlink"),
-            FileType::Other => write!(f, ""),
+            _ => write!(f, ""),
         }
     }
 }
@@ -248,7 +248,9 @@ fn event_to_file_info(event: &watchexec_events::Event) -> Option<FileInfo> {
                     Some(watchexec_events::FileType::Dir) => ft = Some(FileType::Dir),
                     Some(watchexec_events::FileType::Symlink) => ft = Some(FileType::Symlink),
                     Some(watchexec_events::FileType::Other) => ft = Some(FileType::Other),
-                    None => {}
+                    _ => {
+                        eprintln!("Unknown file type: {:?}", file_type)
+                    }
                 }
             },
             _ => {}
@@ -263,4 +265,57 @@ fn event_to_file_info(event: &watchexec_events::Event) -> Option<FileInfo> {
     } else {
         None
     }
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct FileLog {
+    pub id: i64,
+    pub event_id: i64,
+    pub timestamp: i64,
+    pub date: String,
+    pub kind: Option<String>,
+    pub path: Option<String>,
+    pub file_type: Option<String>,
+}
+
+#[tauri::command]
+pub async fn list_filelogs(date: String) -> Result<Vec<FileLog>, String> {
+    println!("list_filelogs: date: {}", date);
+    let filelogs = sqlx::query_as::<_,
+      (i64, i64, String, String,
+       i64, i64, Option<String>, Option<String>, Option<String>)
+    >(
+        r#"
+        SELECT
+          e.id, e.timestamp, e.date, e.kind,
+          f.id, f.event_id, f.kind, f.path, f.file_type
+        FROM event e
+        INNER JOIN file f ON e.id = f.event_id
+        WHERE e.kind = ? AND e.date = ?
+        ORDER BY event_id
+        "#
+    )
+    .bind(KIND)
+    .bind(date)
+    .fetch_all(db::pool())
+    .await
+    .unwrap_or(Vec::new())
+    .iter()
+    .map(|row| {
+        let (event_id, timestamp, date, _,
+             id, _, kind, path, file_type,
+        ) = row;
+        FileLog {
+            id: *id,
+            event_id: *event_id,
+            timestamp: *timestamp,
+            date: date.clone(),
+            kind: kind.clone(),
+            path: path.clone(),
+            file_type: file_type.clone(),
+        }
+    })
+    .collect();
+    println!("list_filelogs: filelogs: {:?}", filelogs);
+    Ok(filelogs)
 }

@@ -45,7 +45,7 @@ async fn main() {
             db::list_eventlog_on,
             plugins::application::list_applications,
             plugins::browser::list_browsers,
-            plugins::screen::list_dates,
+            plugins::filelog::list_filelogs,
             plugins::screen::list_screens,
         ])
         .register_uri_scheme_protocol(

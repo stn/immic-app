@@ -1,3 +1,10 @@
+export type EventLog = {
+    id: number
+    timestamp: number
+    date: string
+    kind: string
+}
+
 export type ApplicationLog = {
     id: number
     event_id: number
@@ -25,4 +32,14 @@ export type BrowserLog = {
     referrer?: string
     opener_tab_id?: number
     window_id?: number
+}
+
+export type FileLog = {
+    id: number
+    event_id: number
+    timestamp: number
+    date: string
+    path?: string
+    kind?: string
+    file_type?: string
 }
