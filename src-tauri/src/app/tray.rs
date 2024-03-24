@@ -17,15 +17,12 @@ use crate::plugins::application::ApplicationPlugin;
 use crate::plugins::filelog::FilelogPlugin;
 use crate::plugins::screen::ScreenshotPlugin;
 
-
 pub fn generate_system_tray() -> SystemTray {
     let quit = CustomMenuItem::new("quit".to_string(), "Quit");
     let show = CustomMenuItem::new("show".to_string(), "Show");
-    let hide = CustomMenuItem::new("hide".to_string(), "Hide");
     let preferences = CustomMenuItem::new("preferences".to_string(), "Preferences");
     let tray_menu = SystemTrayMenu::new()
         .add_item(show)
-        .add_item(hide)
         .add_item(preferences)
         .add_native_item(SystemTrayMenuItem::Separator)
         .add_item(quit);
@@ -71,10 +68,6 @@ pub fn system_tray_event(app: &AppHandle, event: SystemTrayEvent) {
                             tauri::WindowUrl::App("index.html".into()),
                         ).build().unwrap();
                     }
-                }
-                "hide" => {
-                    let window = app.get_window("main").unwrap();
-                    window.hide().unwrap();
                 }
                 "preferences" => {
                     if let Some(window) = app.get_window("preferences") {
