@@ -7,6 +7,7 @@ mod plugins;
 use std::sync::Mutex;
 use dotenv::dotenv;
 use tauri::{Manager, State};
+// use tauri::GlobalShortcutManager;
 
 use app::db;
 use app::tray;
@@ -16,12 +17,6 @@ use plugins::Plugin;
 use plugins::application::ApplicationPlugin;
 use plugins::filelog::FilelogPlugin;
 use plugins::screen::ScreenshotPlugin;
-
-// Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
 
 #[tokio::main]
 async fn main() {
@@ -40,13 +35,16 @@ async fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
-            greet,
+            app::tray::quit_app,
+            app::tray::show_main,
+            app::tray::show_preferences,
             db::list_eventlog_dates,
             db::list_eventlog_on,
             plugins::application::list_applications,
             plugins::browser::list_browsers,
             plugins::filelog::list_filelogs,
             plugins::screen::list_screens,
+            plugins::screen::list_screen_dates,
         ])
         .register_uri_scheme_protocol(
             "iss",
@@ -86,12 +84,21 @@ async fn main() {
         })
         .system_tray(tray::generate_system_tray())
         .on_system_tray_event(tray::system_tray_event)
-        .build(tauri::generate_context!())
-        .expect("error while running tauri application")
-        .run(|_app_handle, event| match event {
-            tauri::RunEvent::ExitRequested { api, .. } => {
-                api.prevent_exit();
+        .on_window_event(|event| match event.event() {
+            tauri::WindowEvent::CloseRequested { api, .. } => {
+                event.window().hide().unwrap();
+                api.prevent_close();
             }
             _ => {}
-        });
+        })
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+        // .build(tauri::generate_context!())
+        // .expect("error while running tauri application")
+        // .run(|_app_handle, event| match event {
+        //     tauri::RunEvent::ExitRequested { api, .. } => {
+        //         api.prevent_exit();
+        //     }
+        //     _ => {}
+        // });
 }

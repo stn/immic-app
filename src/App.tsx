@@ -1,8 +1,22 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/tauri";
+import * as GS from "@tauri-apps/api/globalShortcut";
+
 import "./App.css";
 import { ApplicationLog, BrowserLog, FileLog } from "./events";
+
+async function quitApp() {
+  await invoke("quit_app");
+}
+
+async function showMain() {
+  await invoke("show_main");
+}
+
+async function showPreferences() {
+  await invoke("show_preferences");
+}
 
 function App() {
   const [greetMsg, setGreetMsg] = useState("");
@@ -13,11 +27,6 @@ function App() {
   const [browsers, setBrowsers] = useState<BrowserLog[]>([]);
   const [filelogs, setFilelogs] = useState<FileLog[]>([]);
   const [screens, setScreens] = useState<string[]>([]);
-
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
-    setGreetMsg(await invoke("greet", { name }));
-  }
 
   async function listDates() {
     setDates(await invoke("list_eventlog_dates"));
@@ -38,6 +47,23 @@ function App() {
   async function listScreens(date: string) {
     setScreens(await invoke("list_screens", { date }));
   }
+
+  async function listScreenDates(date: string) {
+    setScreens(await invoke("list_screen_dates", { date }));
+  }
+
+  useEffect(() => {
+    const registerShortCuts = async () => {
+      await GS.register("Alt+Shift+K", () => {
+        console.log("Alt+Shift+K pressed");
+        showMain();
+      });
+    };
+    registerShortCuts();
+    return () => {
+      GS.unregister("Alt+Shift+K");
+    }
+  }, []);
 
   return (
     <div className="container">
@@ -61,7 +87,6 @@ function App() {
         className="row"
         onSubmit={(e) => {
           e.preventDefault();
-          greet();
           listDates();
         }}
       >

@@ -117,7 +117,7 @@ fn check_iss_uri(uri: &str) -> bool {
  
 
 #[tauri::command]
-pub fn list_dates() -> Result<Vec<String>, String> {
+pub fn list_screen_dates() -> Result<Vec<String>, String> {
     // List all screenshot dates
     let base_dir = Path::new(r"F:\immic-dev");
     let screen_dir = base_dir.join("screen");

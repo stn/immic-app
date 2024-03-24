@@ -30,65 +30,80 @@ pub fn generate_system_tray() -> SystemTray {
 }
 
 pub fn system_tray_event(app: &AppHandle, event: SystemTrayEvent) {
+    let app = app.clone();
     match event {
         SystemTrayEvent::MenuItemClick { id, .. } => {
             match id.as_str() {
                 "quit" => {
-                    let app = app.clone();
-                    // Plugins
-                    let application: State<Mutex<ApplicationPlugin>> = app.state();
-                    application.lock().unwrap().stop();
-                    let filelog: State<Mutex<FilelogPlugin>> = app.state();
-                    filelog.lock().unwrap().stop();
-                    let screenshot: State<Mutex<ScreenshotPlugin>> = app.state();
-                    screenshot.lock().unwrap().stop();
-                    tokio::spawn(async move {
-                        // DB
-                        db::close().await;
-
-                        // https://github.com/tauri-apps/tauri/discussions/3273
-                        tauri::api::process::kill_children();
-
-                        app.exit(0);
-                    });
+                    quit_app(app);
                 }
                 "show" => {
-                    if let Some(window) = app.get_window("main") {
-                        if window.is_minimized().unwrap() {
-                            window.unminimize().unwrap();
-                        } else if window.is_visible().unwrap() {
-                            window.set_focus().unwrap();
-                        } else {
-                            window.show().unwrap();
-                        }
-                    } else {
-                        tauri::WindowBuilder::new(
-                            app,
-                            "main".to_string(),
-                            tauri::WindowUrl::App("index.html".into()),
-                        ).build().unwrap();
-                    }
+                    show_main(app);
                 }
                 "preferences" => {
-                    if let Some(window) = app.get_window("preferences") {
-                        if window.is_minimized().unwrap() {
-                            window.unminimize().unwrap();
-                        } else if window.is_visible().unwrap() {
-                            window.set_focus().unwrap();
-                        } else {
-                            window.show().unwrap();
-                        }
-                    } else {
-                        tauri::WindowBuilder::new(
-                            app,
-                            "preferences".to_string(),
-                            tauri::WindowUrl::App("preferences.html".into()),
-                        ).build().unwrap();
-                    }
+                    show_preferences(app);
                 }
                 _ => {}
             }
         }
         _ => {}
+    }
+}
+
+#[tauri::command]
+pub fn quit_app(app: AppHandle) {
+    // Plugins
+    let application: State<Mutex<ApplicationPlugin>> = app.state();
+    application.lock().unwrap().stop();
+    let filelog: State<Mutex<FilelogPlugin>> = app.state();
+    filelog.lock().unwrap().stop();
+    let screenshot: State<Mutex<ScreenshotPlugin>> = app.state();
+    screenshot.lock().unwrap().stop();
+    tokio::spawn(async move {
+        // DB
+        db::close().await;
+
+        // https://github.com/tauri-apps/tauri/discussions/3273
+        tauri::api::process::kill_children();
+
+        app.exit(0);
+    });
+}
+
+#[tauri::command]
+pub fn show_main(app: AppHandle) {
+    if let Some(window) = app.get_window("main") {
+        if window.is_minimized().unwrap() {
+            window.unminimize().unwrap();
+        } else if window.is_visible().unwrap() {
+            window.set_focus().unwrap();
+        } else {
+            window.show().unwrap();
+        }
+    } else {
+        tauri::WindowBuilder::new(
+            &app,
+            "main".to_string(),
+            tauri::WindowUrl::App("index.html".into()),
+        ).build().unwrap();
+    }
+}
+
+#[tauri::command]
+pub fn show_preferences(app: AppHandle) {
+    if let Some(window) = app.get_window("preferences") {
+        if window.is_minimized().unwrap() {
+            window.unminimize().unwrap();
+        } else if window.is_visible().unwrap() {
+            window.set_focus().unwrap();
+        } else {
+            window.show().unwrap();
+        }
+    } else {
+        tauri::WindowBuilder::new(
+            &app,
+            "preferences".to_string(),
+            tauri::WindowUrl::App("preferences.html".into()),
+        ).build().unwrap();
     }
 }
