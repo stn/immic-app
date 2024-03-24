@@ -145,5 +145,5 @@ fn db_path() -> String {
             return path;
         }
     }
-    "../immic.db".to_string()
+    "immic.db".to_string()
 }

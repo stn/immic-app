@@ -1,5 +1,3 @@
-import React from "react";
-
 function Pref() {
   return (
     <div className="container">

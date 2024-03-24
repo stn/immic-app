@@ -2,14 +2,15 @@ import { useState } from "react";
 import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/tauri";
 import "./App.css";
+import { ApplicationLog, BrowserLog } from "./events";
 
 function App() {
   const [greetMsg, setGreetMsg] = useState("");
   const [name, setName] = useState("");
   const [dates, setDates] = useState<string[]>([]);
   const [date, setDate] = useState<string>('');
-  const [applications, setApplications] = useState([]);  // TODO set type
-  const [browsers, setBrowsers] = useState([]);  // TODO set type
+  const [applications, setApplications] = useState<ApplicationLog[]>([]);  // TODO set type
+  const [browsers, setBrowsers] = useState<BrowserLog[]>([]);  // TODO set type
   const [screens, setScreens] = useState<string[]>([]);
 
   async function greet() {
@@ -87,7 +88,7 @@ function App() {
       </div>
       <div>
         {browsers.map((browser) => (
-          <div key={browser.id}>{browser.id}: {browser.title}</div>
+          <div key={browser.id}>{browser.id}: {browser.title} {JSON.stringify(browser)}</div>
         ))}
       </div>
       <div>
