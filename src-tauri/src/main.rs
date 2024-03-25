@@ -7,7 +7,7 @@ mod plugins;
 use std::sync::Mutex;
 use dotenv::dotenv;
 use tauri::{Manager, State};
-// use tauri::GlobalShortcutManager;
+use log::error;
 
 use app::db;
 use app::tray;
@@ -25,7 +25,8 @@ async fn main() {
     // Enable gpu hardware acceleration on Windows
     //refer to this issue: https://github.com/tauri-apps/tauri/issues/4891
     std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--ignore-gpu-blocklist");
-    std::env::set_var("RUST_LOG", "info");
+    
+    // Enable logging
     env_logger::init();
 
     tauri::async_runtime::set(tokio::runtime::Handle::current());
@@ -76,7 +77,7 @@ async fn main() {
                 let handle = Box::new(app.handle());
                 std::thread::spawn(move || {
                     server::init(*handle).unwrap_or_else(|e| {
-                        eprintln!("Server error: {}", e);
+                        error!("Server error: {}", e);
                     });
                 });
             }

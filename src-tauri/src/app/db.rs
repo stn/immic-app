@@ -1,5 +1,6 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
+use log::debug;
 use once_cell::sync::Lazy;
 use sqlx::Sqlite;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
@@ -140,7 +141,7 @@ pub async fn list_eventlog_on(date: String) -> Result<Vec<EventLog>, String> {
 
 fn db_path() -> String {
     if let Ok(path) = std::env::var("DB_PATH") {
-        println!("DB_PATH: {:?}", path);
+        debug!("DB_PATH: {:?}", path);
         if path != "" {
             return path;
         }

@@ -1,6 +1,7 @@
 use chrono::Local;
 use once_cell::sync::Lazy;
 use regex::Regex;
+use log::{debug, error};
 use std::error::Error;
 use std::fs;
 use std::path::Path;
@@ -45,7 +46,7 @@ impl Plugin for ScreenshotPlugin {
 }
 
 fn take_screenshot() {
-    println!("screenshot");
+    debug!("screenshot");
     let monitors = Monitor::all().unwrap();
 
     for monitor in monitors {
@@ -111,7 +112,7 @@ fn check_iss_uri(uri: &str) -> bool {
     if RE.is_match(uri) {
         return true;
     }
-    // println!("Invalid uri: {}", uri);
+    error!("Invalid uri: {}", uri);
     false
 }
  
@@ -149,10 +150,8 @@ pub fn list_screens(date: &str) -> Result<Vec<String>, String> {
             let path = path.unwrap().path();
             let filename = path.file_name().unwrap().to_str().unwrap();
             if RE.is_match(&filename) && path.is_file() {
-                // println!("filename: {}", filename);
                 let caps = RE.captures(&filename).unwrap();
                 let image_name = &caps[1];
-                println!("image_name: {}", image_name);
                 screenshots.push(image_name.to_string());
             }
         }

@@ -2,6 +2,7 @@
 use actix_web::{post, web};
 use anyhow::Result;
 use chrono::DateTime;
+use log::{debug, error};
 
 use crate::app::db;
 use crate::plugins::Plugin;
@@ -71,10 +72,10 @@ impl TabInfo {
 
 #[post("/api/v1/browserlog")]
 pub async fn browserlog(tab_info: web::Json<TabInfo>) -> actix_web::Result<String> {
-    println!("tab_info: {:?}", tab_info);
+    debug!("tab_info: {:?}", tab_info);
 
     if let Err(e) = tab_info.insert().await {
-        println!("Error on insert: {:?}", e);
+        error!("Error on insert: {:?}", e);
         return Err(actix_web::error::ErrorInternalServerError(e));
     }
 
@@ -98,7 +99,7 @@ pub struct BrowserLog {
 
 #[tauri::command]
 pub async fn list_browsers(date: String) -> Result<Vec<BrowserLog>, String> {
-    println!("list_browsers: date: {}", date);
+    debug!("list_browsers: date: {}", date);
     let browser_logs = sqlx::query_as::<_,
       (i64, i64, String, String, i64, i64, Option<i64>, Option<String>, Option<String>, Option<String>, Option<String>, Option<i64>, Option<i64>)>(
         r#"
@@ -134,6 +135,6 @@ pub async fn list_browsers(date: String) -> Result<Vec<BrowserLog>, String> {
         }
     })
     .collect();
-    println!("list_browsers: browser_logs: {:?}", browser_logs);
+    debug!("list_browsers: browser_logs: {:?}", browser_logs);
     Ok(browser_logs)
 }

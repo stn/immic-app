@@ -1,5 +1,6 @@
 use active_win_pos_rs::get_active_window;
 use anyhow::Result;
+use log::debug;
 use std::sync::{Arc, Mutex};
 use sqlx;
 
@@ -39,15 +40,15 @@ impl Plugin for ApplicationPlugin {
 
                 // check if the last info is the same as the current info
                 if info == last_info {
-                    println!("check_application: same as last info");
+                    debug!("check_application: same as last info");
                     if let Err(e) = insert_ref(last_id).await {
-                        println!("check_application: Error on inserting ref: {:?}", e);
+                        debug!("check_application: Error on inserting ref: {:?}", e);
                     }
                     continue;
                 }
 
                 if let Some(info) = info {
-                    println!("check_application: {:?}", info);
+                    debug!("check_application: {:?}", info);
                     let id = info.insert().await;
                     match id {
                         Ok(id) => {
@@ -55,7 +56,7 @@ impl Plugin for ApplicationPlugin {
                             last_id = id;
                         },
                         Err(e) => {
-                            println!("check_application: Error on inserting application_info: {:?}", e);
+                            debug!("check_application: Error on inserting application_info: {:?}", e);
                         },
                     }
                 }
@@ -69,10 +70,10 @@ impl Plugin for ApplicationPlugin {
 }
 
 async fn check_application() -> Option<ApplicationInfo> {
-    println!("check_application");
+    debug!("check_application");
     match get_active_window() {
         Ok(win) => {
-            // println!("active_window: {:?}", win);
+            debug!("active_window: {:?}", win);
             let info = ApplicationInfo {
                 process_id: win.process_id as i64,
                 name: win.app_name,
@@ -166,7 +167,7 @@ pub struct ApplicationLog {
 
 #[tauri::command]
 pub async fn list_applications(date: String) -> Result<Vec<ApplicationLog>, String> {
-    println!("list_applications: date: {}", date);
+    debug!("list_applications: date: {}", date);
     let application_logs = sqlx::query_as::<_,
       (i64, i64, String, String, i64, i64, Option<i64>, Option<String>, Option<String>, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>)>(
         r#"
@@ -201,6 +202,6 @@ pub async fn list_applications(date: String) -> Result<Vec<ApplicationLog>, Stri
         }
     })
     .collect();
-    println!("list_applications: application_logs: {:?}", application_logs);
+    debug!("list_applications: application_logs: {:?}", application_logs);
     Ok(application_logs)
 }

@@ -1,4 +1,5 @@
 use anyhow::Result;
+use log::{debug, error};
 use std::fmt;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
@@ -23,21 +24,21 @@ impl FilelogPlugin {
 
 impl Plugin for FilelogPlugin {
     fn start(&mut self) {
-        println!("filelog");
+        debug!("filelog");
 
         let (tx, mut rx) = mpsc::channel::<Vec<FileInfo>>(32);
 
         let manager = tokio::spawn(async move {
             while let Some(infos) = rx.recv().await {
-                println!("Received file_infos: {:?}", infos);
+                debug!("Received file_infos: {:?}", infos);
                 for info in infos.iter() {
-                    println!("filelog: {:?}", info);
+                    debug!("filelog: {:?}", info);
                     match info.insert().await {
                         Ok(id) => {
-                            println!("filelog: inserted id: {:?}", id);
+                            debug!("filelog: inserted id: {:?}", id);
                         },
                         Err(e) => {
-                            eprintln!("Error on insert filelog: {:?}", e);
+                            error!("Error on insert filelog: {:?}", e);
                         },
                     }
                 }
@@ -158,7 +159,7 @@ fn event_to_file_info(event: &watchexec_events::Event) -> Option<FileInfo> {
                     watchexec_events::filekind::FileEventKind::Modify(_) => kind = Some(FileKind::Modify),
                     watchexec_events::filekind::FileEventKind::Remove(_) => kind = Some(FileKind::Remove),
                     _ => {
-                        eprintln!("Unknown file event kind: {:?}", k)
+                        error!("Unknown file event kind: {:?}", k)
                     }
                 }
             },
@@ -170,7 +171,7 @@ fn event_to_file_info(event: &watchexec_events::Event) -> Option<FileInfo> {
                     Some(watchexec_events::FileType::Symlink) => ft = Some(FileType::Symlink),
                     Some(watchexec_events::FileType::Other) => ft = Some(FileType::Other),
                     _ => {
-                        eprintln!("Unknown file type: {:?}", file_type)
+                        error!("Unknown file type: {:?}", file_type)
                     }
                 }
             },
@@ -201,7 +202,7 @@ pub struct FileLog {
 
 #[tauri::command]
 pub async fn list_filelogs(date: String) -> Result<Vec<FileLog>, String> {
-    println!("list_filelogs: date: {}", date);
+    debug!("list_filelogs: date: {}", date);
     let filelogs = sqlx::query_as::<_,
       (i64, i64, String, String,
        i64, i64, Option<String>, Option<String>, Option<String>)
@@ -237,6 +238,6 @@ pub async fn list_filelogs(date: String) -> Result<Vec<FileLog>, String> {
         }
     })
     .collect();
-    println!("list_filelogs: filelogs: {:?}", filelogs);
+    debug!("list_filelogs: filelogs: {:?}", filelogs);
     Ok(filelogs)
 }
