@@ -1,9 +1,10 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use log::debug;
-use once_cell::sync::Lazy;
+use std::sync::OnceLock;
 use sqlx::Sqlite;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
+use tauri::AppHandle;
 
 #[derive(Debug, serde::Serialize)]
 pub struct EventLog {
@@ -13,22 +14,23 @@ pub struct EventLog {
     pub kind: String,
 }
 
-static POOL: Lazy<sqlx::Pool<Sqlite>> = Lazy::new(|| {
-    let options = SqliteConnectOptions::new()
-        .filename(db_path())
-        .create_if_missing(true)
-        .journal_mode(SqliteJournalMode::Wal)
-        .synchronous(SqliteSynchronous::Normal);
-    let pool = SqlitePoolOptions::new()
-        .connect_lazy_with(options);
-    pool
-});
+static POOL: OnceLock<sqlx::Pool<Sqlite>> = OnceLock::new();
 
 pub fn pool() -> &'static sqlx::Pool<Sqlite> {
-    &*POOL
+    POOL.get().expect("DB pool is not initialized")
 }
 
-pub async fn init() {
+pub async fn init(app: &tauri::AppHandle) {
+    POOL.get_or_init(|| {
+        let options = SqliteConnectOptions::new()
+            .filename(db_path(app)) // appを使う https://github.com/stn/immic-app/issues/9
+            .create_if_missing(true)
+            .journal_mode(SqliteJournalMode::Wal)
+            .synchronous(SqliteSynchronous::Normal);
+        let pool = SqlitePoolOptions::new()
+            .connect_lazy_with(options);
+        pool
+    });
     // TODO migrateのバージョンを確認して実行するべきかを判断する
     // after_connectを使うといいかもしれない。
     // https://docs.rs/sqlx/latest/sqlx/pool/struct.PoolOptions.html#method.after_connect
@@ -37,13 +39,13 @@ pub async fn init() {
 
 async fn migrate() -> sqlx::Result<()> {
     sqlx::migrate!("./migrations")
-        .run(&*POOL)
+        .run(pool())
         .await?;
     Ok(())
 }
 
 pub async fn close() {
-    POOL.close().await;
+    pool().close().await;
 }
 
 pub async fn insert_eventlog(datetime: DateTime<Utc>, kind: &str) -> Result<i64> {
@@ -139,7 +141,7 @@ pub async fn list_eventlog_on(date: String) -> Result<Vec<EventLog>, String> {
 //     Ok(result)
 // }
 
-fn db_path() -> String {
+fn db_path(app: &AppHandle) -> String {
     if let Ok(path) = std::env::var("DB_PATH") {
         debug!("DB_PATH: {:?}", path);
         if path != "" {
