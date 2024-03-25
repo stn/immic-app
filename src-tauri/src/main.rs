@@ -31,8 +31,6 @@ async fn main() {
 
     tauri::async_runtime::set(tokio::runtime::Handle::current());
 
-    db::init().await;
-
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
@@ -57,30 +55,28 @@ async fn main() {
         .manage(Mutex::new(ApplicationPlugin::new()))
         .manage(Mutex::new(FilelogPlugin::new()))
         .setup(|app| {
-            {
-                app.manage(Mutex::new(Setting::new(app)));
-            }
-            {
-                let application: State<Mutex<ApplicationPlugin>> = app.state();
+            let handle = Box::new(app.handle());
+            tokio::spawn(async move {
+                db::init(&*handle).await;
+
+                handle.manage(Mutex::new(Setting::new(&*handle)));
+
+                let application: State<Mutex<ApplicationPlugin>> = handle.state();
                 application.lock().unwrap().start();
-            }
-            {
-                let filelog: State<Mutex<FilelogPlugin>> = app.state();
+
+                let filelog: State<Mutex<FilelogPlugin>> = handle.state();
                 filelog.lock().unwrap().start();
-            }
-            {
-                let screenshot: State<Mutex<ScreenshotPlugin>> = app.state();
+
+                let screenshot: State<Mutex<ScreenshotPlugin>> = handle.state();
                 screenshot.lock().unwrap().start();
-            }
-            {
-                // server
-                let handle = Box::new(app.handle());
+
+                // server::init will block the thread
                 std::thread::spawn(move || {
                     server::init(*handle).unwrap_or_else(|e| {
                         error!("Server error: {}", e);
                     });
                 });
-            }
+            });
             Ok(())
         })
         .system_tray(tray::generate_system_tray())

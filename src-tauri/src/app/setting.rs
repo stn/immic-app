@@ -1,21 +1,19 @@
 use serde_json::Value;
-use tauri::{App, AppHandle, Wry};
+use tauri::{AppHandle, Wry};
 use tauri_plugin_store::{Error, JsonValue, Store, StoreBuilder};
 
 pub struct Setting {
-    app: AppHandle,
     store: Store<Wry>
 }
 
 impl Setting {
-    pub fn new(app: &App) -> Self {
+    pub fn new(app: &AppHandle) -> Self {
         let setting_path = app.path_resolver()
             .app_data_dir()
             .unwrap()
             .join("setting.json");
-        let store = StoreBuilder::new(app.handle().clone(), setting_path).build();
+        let store = StoreBuilder::new(app.clone(), setting_path).build();
         Self {
-            app: app.handle().clone(),
             store,
         }
     }
