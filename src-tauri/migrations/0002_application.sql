@@ -3,7 +3,7 @@
 CREATE TABLE IF NOT EXISTS application_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT
 ,   event_id INTEGER NOT NULL
-,   info_id INTEGER
+,   info_id INTEGER NOT NULL
 ,   process_id INTEGER
 ,   title TEXT
 ,   x INTEGER

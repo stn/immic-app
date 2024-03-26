@@ -214,7 +214,7 @@ pub async fn list_application_logs(date: String) -> Result<Vec<ApplicationLog>, 
     debug!("list_application_logs: date: {}", date);
     let application_logs = sqlx::query_as::<_,
       (i64, i64, String, String, i64,
-       i64, Option<i64>, Option<i64>, Option<String>, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>)>(
+       i64, i64, Option<i64>, Option<String>, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>)>(
         r#"
         SELECT
           e.id, e.timestamp, e.date, e.kind, e.log_id,
@@ -240,7 +240,7 @@ pub async fn list_application_logs(date: String) -> Result<Vec<ApplicationLog>, 
             event_id: *event_id,
             timestamp: *timestamp,
             date: date.clone(),
-            info_id: info_id.unwrap_or(0),
+            info_id: *info_id,
             process_id: *process_id,
             title: title.clone(),
             x: *x,
