@@ -49,7 +49,8 @@ async fn main() {
             plugins::application::get_application_info,
             plugins::browser::list_browser_logs,
             plugins::browser::get_browser_info,
-            plugins::filelog::list_filelogs,
+            plugins::filelog::list_file_logs,
+            plugins::filelog::get_file_info,
             plugins::screen::list_screens,
             plugins::screen::list_screen_dates,
         ])
