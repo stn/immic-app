@@ -121,7 +121,7 @@ impl WinInfo {
         .fetch_one(db::pool())
         .await;
         let info_id = match result {
-            Ok(row) => row.0,
+            Ok((id,)) => id,
             Err(_) => {
                 // Insert application_info for new path
                 let result = sqlx::query(
@@ -222,7 +222,7 @@ pub async fn list_application_logs(date: String) -> Result<Vec<ApplicationLog>, 
         FROM event_log e
         INNER JOIN application_log a ON e.log_id = a.id
         WHERE e.kind = ? AND e.date = ?
-        ORDER BY event_id
+        ORDER BY e.timestamp
         "#
     )
     .bind(KIND)

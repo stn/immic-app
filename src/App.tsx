@@ -36,8 +36,8 @@ function App() {
     setApplications(await invoke("list_application_logs", { date }));
   }
 
-  async function listBrowsers(date: string) {
-    setBrowsers(await invoke("list_browsers", { date }));
+  async function listBrowserLogs(date: string) {
+    setBrowsers(await invoke("list_browser_logs", { date }));
   }
 
   async function listFilelogs(date: string) {
@@ -104,7 +104,7 @@ function App() {
           <button key={date} onClick={() => {
             setDate(date);
             listApplicationLogs(date);
-            listBrowsers(date);
+            listBrowserLogs(date);
             listFilelogs(date);
             listScreens(date);
           }}>
@@ -119,7 +119,7 @@ function App() {
       </div>
       <div>
         {browsers.map((browser) => (
-          <div key={browser.id}>{browser.id}: {browser.title} {JSON.stringify(browser)}</div>
+          <div key={browser.id}>{browser.id}: {JSON.stringify(browser)}</div>
         ))}
       </div>
       <div>
