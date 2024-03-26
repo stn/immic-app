@@ -67,16 +67,19 @@ pub async fn close() {
 
 pub async fn insert_eventlog(datetime: DateTime<Utc>, kind: &str) -> Result<i64> {
     // timestamp to date string in local timezone
+    let ts = datetime.timestamp();
+    let timeframe = ts / 60;
     let local_time = datetime.with_timezone(&chrono::Local);
     let date = local_time.format("%Y%m%d").to_string();
     let pool = pool();
     let result = sqlx::query(
         r#"
-        INSERT INTO event_log (timestamp, date, kind)
-        VALUES (?, ?, ?)
+        INSERT INTO event_log (timestamp, timeframe, date, kind)
+        VALUES (?, ?, ?, ?)
         "#
     )
-    .bind(datetime.timestamp_millis())
+    .bind(ts)
+    .bind(timeframe)
     .bind(date)
     .bind(kind)
     .execute(pool).await?;
