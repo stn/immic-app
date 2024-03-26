@@ -10,14 +10,20 @@ export type ApplicationLog = {
     event_id: number
     timestamp: number
     date: string
+    info_id: number
     process_id?: number
-    name?: string
     title?: string
     x?: number
     y?: number
     width?: number
     height?: number
     ref_id?: number
+}
+
+export type ApplicationInfo = {
+    id: number
+    path?: string
+    name?: string
 }
 
 export type BrowserLog = {

@@ -69,13 +69,14 @@ impl Plugin for ApplicationPlugin {
     }
 }
 
-async fn check_application() -> Option<ApplicationInfo> {
+async fn check_application() -> Option<WinInfo> {
     debug!("check_application");
     match get_active_window() {
         Ok(win) => {
             debug!("active_window: {:?}", win);
-            let info = ApplicationInfo {
+            let info = WinInfo {
                 process_id: win.process_id as i64,
+                path: win.process_path.to_string_lossy().to_string(),
                 name: win.app_name,
                 title: win.title,
                 x: win.position.x as i64,
@@ -92,8 +93,9 @@ async fn check_application() -> Option<ApplicationInfo> {
 }
 
 #[derive(Debug,PartialEq)]
-struct ApplicationInfo {
+struct WinInfo {
     process_id: i64,
+    path: String,
     name: String,
     title: String,
     x: i64,
@@ -102,20 +104,49 @@ struct ApplicationInfo {
     height: i64,
 }
 
-impl ApplicationInfo {
+impl WinInfo {
     async fn insert(&self) -> Result<i64> {
         let timestamp = chrono::Utc::now();
         let event_id = db::insert_eventlog(timestamp, KIND).await?;
 
+        // Search application_info by path
+        let result = sqlx::query_as::<_, (i64,)>(
+            r#"
+            SELECT id
+            FROM application_info
+            WHERE path = ?
+            "#
+        )
+        .bind(&self.path)
+        .fetch_one(db::pool())
+        .await;
+        let info_id = match result {
+            Ok(row) => row.0,
+            Err(_) => {
+                // Insert application_info for new path
+                let result = sqlx::query(
+                    r#"
+                    INSERT INTO application_info (path, name)
+                    VALUES (?, ?)
+                    "#
+                )
+                .bind(&self.path)
+                .bind(&self.name)
+                .execute(db::pool())
+                .await?;
+                result.last_insert_rowid()
+            }
+        };
+
         let result = sqlx::query(
             r#"
-            INSERT INTO application_log (event_id, process_id, name, title, x, y, width, height)
+            INSERT INTO application_log (event_id, info_id, process_id, title, x, y, width, height)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             "#
         )
         .bind(event_id)
+        .bind(info_id)
         .bind(self.process_id)
-        .bind(&self.name)
         .bind(&self.title)
         .bind(self.x)
         .bind(self.y)
@@ -131,7 +162,7 @@ impl ApplicationInfo {
     }
 }
 
-async fn insert_ref(id: i64) -> Result<i64> {
+async fn insert_ref(ref_id: i64) -> Result<i64> {
     let timestamp = chrono::Utc::now();
     let event_id = db::insert_eventlog(timestamp, KIND).await?;
 
@@ -142,7 +173,7 @@ async fn insert_ref(id: i64) -> Result<i64> {
         "#
     )
     .bind(event_id)
-    .bind(id)
+    .bind(ref_id)
     .execute(db::pool())
     .await?;
 
@@ -161,8 +192,8 @@ pub struct ApplicationLog {
     pub event_id: i64,
     pub timestamp: i64,
     pub date: String,
+    pub info_id: i64,
     pub process_id: Option<i64>,
-    pub name: Option<String>,
     pub title: Option<String>,
     pub x: Option<i64>,
     pub y: Option<i64>,
@@ -171,13 +202,23 @@ pub struct ApplicationLog {
     pub ref_id: Option<i64>,
 }
 
+#[derive(Debug, serde::Serialize)]
+pub struct ApplicationInfo {
+    pub id: i64,
+    pub path: Option<String>,
+    pub name: Option<String>,
+}
+
 #[tauri::command]
-pub async fn list_applications(date: String) -> Result<Vec<ApplicationLog>, String> {
-    debug!("list_applications: date: {}", date);
+pub async fn list_application_logs(date: String) -> Result<Vec<ApplicationLog>, String> {
+    debug!("list_application_logs: date: {}", date);
     let application_logs = sqlx::query_as::<_,
-      (i64, i64, String, String, i64, i64, Option<i64>, Option<String>, Option<String>, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>)>(
+      (i64, i64, String, String, i64,
+       i64, Option<i64>, Option<i64>, Option<String>, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>)>(
         r#"
-        SELECT e.id, e.timestamp, e.date, e.kind, e.log_id, a.id, a.process_id, a.name, a.title, a.x, a.y, a.width, a.height, a.ref_id
+        SELECT
+          e.id, e.timestamp, e.date, e.kind, e.log_id,
+          a.id, a.info_id, a.process_id, a.title, a.x, a.y, a.width, a.height, a.ref_id
         FROM event_log e
         INNER JOIN application_log a ON e.log_id = a.id
         WHERE e.kind = ? AND e.date = ?
@@ -191,14 +232,16 @@ pub async fn list_applications(date: String) -> Result<Vec<ApplicationLog>, Stri
     .unwrap_or(Vec::new())
     .iter()
     .map(|row| {
-        let (event_id, timestamp, date, _, id, _, process_id, name, title, x, y, width, height, ref_id) = row;
+        let (event_id, timestamp, date, _, _,
+             id, info_id, process_id, title, x, y, width, height, ref_id
+            ) = row;
         ApplicationLog {
             id: *id,
             event_id: *event_id,
             timestamp: *timestamp,
             date: date.clone(),
+            info_id: info_id.unwrap_or(0),
             process_id: *process_id,
-            name: name.clone(),
             title: title.clone(),
             x: *x,
             y: *y,
@@ -210,4 +253,28 @@ pub async fn list_applications(date: String) -> Result<Vec<ApplicationLog>, Stri
     .collect();
     debug!("list_applications: application_logs: {:?}", application_logs);
     Ok(application_logs)
+}
+
+#[tauri::command]
+pub async fn get_application_info(app_id: i64) -> Result<ApplicationInfo, String> {
+    debug!("get_application_info: app_id={}", app_id);
+
+    sqlx::query_as::<_, (i64, Option<String>, Option<String>)>(
+        r#"
+        SELECT id, path, name
+        FROM application_info
+        WHERE id = ?
+        "#
+    )
+    .bind(app_id)
+    .fetch_one(db::pool())
+    .await
+    .map_or(Err("Not found".to_string()), |row| {
+        let (id, path, name) = row;
+        Ok(ApplicationInfo {
+            id: id,
+            path: path,
+            name: name,
+        })
+    })
 }
