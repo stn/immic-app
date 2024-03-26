@@ -3,7 +3,12 @@
 CREATE TABLE IF NOT EXISTS file_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT
 ,   event_id INTEGER NOT NULL
+,   info_id INTEGER NOT NULL
 ,   kind TEXT
-,   path TEXT
+);
+
+CREATE TABLE IF NOT EXISTS file_info (
+    id INTEGER PRIMARY KEY AUTOINCREMENT
+,   path TEXT NOT NULL
 ,   file_type TEXT
 );

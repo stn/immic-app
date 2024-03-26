@@ -40,8 +40,8 @@ function App() {
     setBrowsers(await invoke("list_browser_logs", { date }));
   }
 
-  async function listFilelogs(date: string) {
-    setFilelogs(await invoke("list_filelogs", { date }));
+  async function listFileLogs(date: string) {
+    setFilelogs(await invoke("list_file_logs", { date }));
   }
 
   async function listScreens(date: string) {
@@ -105,7 +105,7 @@ function App() {
             setDate(date);
             listApplicationLogs(date);
             listBrowserLogs(date);
-            listFilelogs(date);
+            listFileLogs(date);
             listScreens(date);
           }}>
             {date}

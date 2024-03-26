@@ -26,11 +26,11 @@ impl Plugin for FilelogPlugin {
     fn start(&mut self) {
         debug!("filelog");
 
-        let (tx, mut rx) = mpsc::channel::<Vec<FileInfo>>(32);
+        let (tx, mut rx) = mpsc::channel::<Vec<FileEventInfo>>(32);
 
         let manager = tokio::spawn(async move {
             while let Some(infos) = rx.recv().await {
-                debug!("Received file_infos: {:?}", infos);
+                debug!("Received file_event_infos: {:?}", infos);
                 for info in infos.iter() {
                     debug!("filelog: {:?}", info);
                     match info.insert().await {
@@ -53,7 +53,7 @@ impl Plugin for FilelogPlugin {
                 return action;
             }
 
-            let infos: Vec<FileInfo> = action.events.iter().filter_map(event_to_file_info).collect();
+            let infos: Vec<FileEventInfo> = action.events.iter().filter_map(event_to_file_event_info).collect();
             tx.try_send(infos).unwrap();
 
             // // if Ctrl-C is received, quit
@@ -78,27 +78,55 @@ impl Plugin for FilelogPlugin {
 }
 
 #[derive(Debug,PartialEq)]
-struct FileInfo {
+struct FileEventInfo {
     kind: FileKind,
     path: String,
     file_type: FileType,
 }
 
-impl FileInfo {
+impl FileEventInfo {
     async fn insert(&self) -> Result<i64> {
         let timestamp = chrono::Utc::now();
         let event_id = db::insert_eventlog(timestamp, KIND).await?;
 
+        // Search file_info by path
+        let result = sqlx::query_as::<_, (i64,)>(
+            r#"
+            SELECT id
+            FROM file_info
+            WHERE path = ?
+            "#
+        )
+        .bind(&self.path)
+        .fetch_one(db::pool())
+        .await;
+        let info_id = match result {
+            Ok((id,)) => id,
+            Err(_) => {
+                // Insert file_info for new path
+                let result = sqlx::query(
+                    r#"
+                    INSERT INTO file_info (path, file_type)
+                    VALUES (?, ?)
+                    "#
+                )
+                .bind(&self.path)
+                .bind(&self.file_type.to_string())
+                .execute(db::pool())
+                .await?;
+                result.last_insert_rowid()
+            }
+        };
+
         let result = sqlx::query(
             r#"
-            INSERT INTO file_log (event_id, kind, path, file_type)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO file_log (event_id, info_id, kind)
+            VALUES (?, ?, ?)
             "#
         )
         .bind(event_id)
+        .bind(info_id)
         .bind(&self.kind.to_string())
-        .bind(&self.path)
-        .bind(&self.file_type.to_string())
         .execute(db::pool())
         .await?;
 
@@ -147,7 +175,7 @@ impl fmt::Display for FileType {
     }
 }
 
-fn event_to_file_info(event: &watchexec_events::Event) -> Option<FileInfo> {
+fn event_to_file_event_info(event: &watchexec_events::Event) -> Option<FileEventInfo> {
     let mut source = None;
     let mut kind: Option<FileKind> = None;
     let mut p: Option<String> = None;
@@ -182,7 +210,7 @@ fn event_to_file_info(event: &watchexec_events::Event) -> Option<FileInfo> {
         }
     }
     if let (Some(watchexec_events::Source::Filesystem), Some(kind), Some(path)) = (source, kind, p) {
-        Some(FileInfo {
+        Some(FileEventInfo {
             kind,
             path,
             file_type: ft.unwrap_or(FileType::Other),
@@ -198,26 +226,32 @@ pub struct FileLog {
     pub event_id: i64,
     pub timestamp: i64,
     pub date: String,
+    pub info_id: i64,
     pub kind: Option<String>,
-    pub path: Option<String>,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct FileInfo {
+    pub id: i64,
+    pub path: String,
     pub file_type: Option<String>,
 }
 
 #[tauri::command]
-pub async fn list_filelogs(date: String) -> Result<Vec<FileLog>, String> {
+pub async fn list_file_logs(date: String) -> Result<Vec<FileLog>, String> {
     debug!("list_filelogs: date: {}", date);
     let filelogs = sqlx::query_as::<_,
-      (i64, i64, String, String,
-       i64, i64, Option<String>, Option<String>, Option<String>)
+      (i64, i64, String, String, i64,
+       i64, i64, Option<String>)
     >(
         r#"
         SELECT
           e.id, e.timestamp, e.date, e.kind, e.log_id,
-          f.id, f.kind, f.path, f.file_type
+          f.id, f.indo_id, f.kind
         FROM event_log e
         INNER JOIN file_log f ON e.log_id = f.id
         WHERE e.kind = ? AND e.date = ?
-        ORDER BY event_id
+        ORDER BY e.timestamp
         "#
     )
     .bind(KIND)
@@ -227,20 +261,44 @@ pub async fn list_filelogs(date: String) -> Result<Vec<FileLog>, String> {
     .unwrap_or(Vec::new())
     .iter()
     .map(|row| {
-        let (event_id, timestamp, date, _,
-             id, _, kind, path, file_type,
+        let (event_id, timestamp, date, _, _,
+             id, info_id, kind,
         ) = row;
         FileLog {
             id: *id,
             event_id: *event_id,
             timestamp: *timestamp,
             date: date.clone(),
+            info_id: *info_id,
             kind: kind.clone(),
-            path: path.clone(),
-            file_type: file_type.clone(),
         }
     })
     .collect();
     debug!("list_filelogs: filelogs: {:?}", filelogs);
     Ok(filelogs)
 }
+
+#[tauri::command]
+pub async fn get_file_info(file_id: i64) -> Result<FileInfo, String> {
+    debug!("get_file_info: file_id={}", file_id);
+
+    sqlx::query_as::<_, (i64, String, Option<String>)>(
+        r#"
+        SELECT id, path, file_type
+        FROM file_info
+        WHERE id = ?
+        "#
+    )
+    .bind(file_id)
+    .fetch_one(db::pool())
+    .await
+    .map_or(Err("Not found".to_string()), |row| {
+        let (id, path, file_type) = row;
+        Ok(FileInfo {
+            id: id,
+            path: path,
+            file_type: file_type,
+        })
+    })
+}
+
