@@ -102,7 +102,10 @@ impl FileInfo {
         .execute(db::pool())
         .await?;
 
-        Ok(result.last_insert_rowid())
+        // Update event_log with log_id
+        let log_id = result.last_insert_rowid();
+        db::update_eventlog_logid(event_id , log_id).await?;
+        Ok(log_id)
     }
 }
 
@@ -209,10 +212,10 @@ pub async fn list_filelogs(date: String) -> Result<Vec<FileLog>, String> {
     >(
         r#"
         SELECT
-          e.id, e.timestamp, e.date, e.kind,
-          f.id, f.event_id, f.kind, f.path, f.file_type
+          e.id, e.timestamp, e.date, e.kind, e.log_id,
+          f.id, f.kind, f.path, f.file_type
         FROM event_log e
-        INNER JOIN file_log f ON e.id = f.event_id
+        INNER JOIN file_log f ON e.log_id = f.id
         WHERE e.kind = ? AND e.date = ?
         ORDER BY event_id
         "#

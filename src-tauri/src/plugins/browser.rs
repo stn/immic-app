@@ -66,7 +66,11 @@ impl TabInfo {
         .bind(self.windowId)
         .execute(db::pool())
         .await?;
-        Ok(result.last_insert_rowid())
+
+        // Update event_log with log_id
+        let log_id = result.last_insert_rowid();
+        db::update_eventlog_logid(event_id , log_id).await?;
+        Ok(log_id)
     }
 }
 
@@ -104,10 +108,10 @@ pub async fn list_browsers(date: String) -> Result<Vec<BrowserLog>, String> {
       (i64, i64, String, String, i64, i64, Option<i64>, Option<String>, Option<String>, Option<String>, Option<String>, Option<i64>, Option<i64>)>(
         r#"
         SELECT
-          e.id, e.timestamp, e.date, e.kind,
-          b.id, b.event_id, b.tab_id, b.url, b.title, b.fav_icon_url, b.referrer, b.opener_tab_id, b.window_id
+          e.id, e.timestamp, e.date, e.kind, e.log_id,
+          b.id, b.tab_id, b.url, b.title, b.fav_icon_url, b.referrer, b.opener_tab_id, b.window_id
         FROM event_log e
-        INNER JOIN browser_log b ON e.id = b.event_id
+        INNER JOIN browser_log b ON e.log_id = b.id
         WHERE e.kind = ? AND e.date = ?
         ORDER BY event_id
         "#
