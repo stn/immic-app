@@ -32,8 +32,8 @@ function App() {
     setDates(await invoke("list_eventlog_dates"));
   }
 
-  async function listApplications(date: string) {
-    setApplications(await invoke("list_applications", { date }));
+  async function listApplicationLogs(date: string) {
+    setApplications(await invoke("list_application_logs", { date }));
   }
 
   async function listBrowsers(date: string) {
@@ -103,7 +103,7 @@ function App() {
         {dates.map((date) => (
           <button key={date} onClick={() => {
             setDate(date);
-            listApplications(date);
+            listApplicationLogs(date);
             listBrowsers(date);
             listFilelogs(date);
             listScreens(date);
@@ -114,7 +114,7 @@ function App() {
       </div>
       <div>
         {applications.map((app) => (
-          <div key={app.id}>{app.id}: {app.name}</div>
+          <div key={app.id}>{app.id}: {JSON.stringify(app)}</div>
         ))}
       </div>
       <div>
