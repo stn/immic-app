@@ -124,7 +124,10 @@ impl ApplicationInfo {
         .execute(db::pool())
         .await?;
 
-        Ok(result.last_insert_rowid())
+        // Update event_log with log_id
+        let log_id = result.last_insert_rowid();
+        db::update_eventlog_logid(event_id, log_id).await?;
+        Ok(log_id)
     }
 }
 
@@ -143,7 +146,10 @@ async fn insert_ref(id: i64) -> Result<i64> {
     .execute(db::pool())
     .await?;
 
-    Ok(result.last_insert_rowid())
+    // Update event_log with log_id
+    let log_id = result.last_insert_rowid();
+    db::update_eventlog_logid(event_id , log_id).await?;
+    Ok(log_id)
 }
 
 
@@ -171,9 +177,9 @@ pub async fn list_applications(date: String) -> Result<Vec<ApplicationLog>, Stri
     let application_logs = sqlx::query_as::<_,
       (i64, i64, String, String, i64, i64, Option<i64>, Option<String>, Option<String>, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>)>(
         r#"
-        SELECT e.id, e.timestamp, e.date, e.kind, a.id, a.event_id, a.process_id, a.name, a.title, a.x, a.y, a.width, a.height, a.ref_id
+        SELECT e.id, e.timestamp, e.date, e.kind, e.log_id, a.id, a.process_id, a.name, a.title, a.x, a.y, a.width, a.height, a.ref_id
         FROM event_log e
-        INNER JOIN application_log a ON e.id = a.event_id
+        INNER JOIN application_log a ON e.log_id = a.id
         WHERE e.kind = ? AND e.date = ?
         ORDER BY event_id
         "#

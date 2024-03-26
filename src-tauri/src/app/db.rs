@@ -83,6 +83,21 @@ pub async fn insert_eventlog(datetime: DateTime<Utc>, kind: &str) -> Result<i64>
     Ok(result.last_insert_rowid())
 }
 
+pub async fn update_eventlog_logid(id: i64, log_id: i64) -> Result<()> {
+    let pool = pool();
+    sqlx::query(
+        r#"
+        UPDATE event_log
+        SET log_id = ?
+        WHERE id = ?
+        "#
+    )
+    .bind(log_id)
+    .bind(id)
+    .execute(pool).await?;
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn list_eventlog_dates() -> Result<Vec<String>, String> {
     let result: Vec<String> = sqlx::query_as::<_, (String,)>(r#"
