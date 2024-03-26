@@ -205,7 +205,7 @@ pub struct ApplicationLog {
 #[derive(Debug, serde::Serialize)]
 pub struct ApplicationInfo {
     pub id: i64,
-    pub path: Option<String>,
+    pub path: String,
     pub name: Option<String>,
 }
 
@@ -259,7 +259,7 @@ pub async fn list_application_logs(date: String) -> Result<Vec<ApplicationLog>, 
 pub async fn get_application_info(app_id: i64) -> Result<ApplicationInfo, String> {
     debug!("get_application_info: app_id={}", app_id);
 
-    sqlx::query_as::<_, (i64, Option<String>, Option<String>)>(
+    sqlx::query_as::<_, (i64, String, Option<String>)>(
         r#"
         SELECT id, path, name
         FROM application_info

@@ -15,6 +15,6 @@ CREATE TABLE IF NOT EXISTS application_log (
 
 CREATE TABLE IF NOT EXISTS application_info (
     id INTEGER PRIMARY KEY AUTOINCREMENT
-,   path TEXT
+,   path TEXT NOT NULL
 ,   name TEXT
 );
