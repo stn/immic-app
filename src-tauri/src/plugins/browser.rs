@@ -52,7 +52,7 @@ impl TabInfo {
 
         let result = sqlx::query(
             r#"
-            INSERT INTO browser (event_id, tab_id, url, title, fav_icon_url, referrer, opener_tab_id, window_id)
+            INSERT INTO browser_log (event_id, tab_id, url, title, fav_icon_url, referrer, opener_tab_id, window_id)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             "#
         )
@@ -106,8 +106,8 @@ pub async fn list_browsers(date: String) -> Result<Vec<BrowserLog>, String> {
         SELECT
           e.id, e.timestamp, e.date, e.kind,
           b.id, b.event_id, b.tab_id, b.url, b.title, b.fav_icon_url, b.referrer, b.opener_tab_id, b.window_id
-        FROM event e
-        INNER JOIN browser b ON e.id = b.event_id
+        FROM event_log e
+        INNER JOIN browser_log b ON e.id = b.event_id
         WHERE e.kind = ? AND e.date = ?
         ORDER BY event_id
         "#

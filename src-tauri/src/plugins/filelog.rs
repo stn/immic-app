@@ -91,7 +91,7 @@ impl FileInfo {
 
         let result = sqlx::query(
             r#"
-            INSERT INTO file (event_id, kind, path, file_type)
+            INSERT INTO file_log (event_id, kind, path, file_type)
             VALUES (?, ?, ?, ?)
             "#
         )
@@ -211,8 +211,8 @@ pub async fn list_filelogs(date: String) -> Result<Vec<FileLog>, String> {
         SELECT
           e.id, e.timestamp, e.date, e.kind,
           f.id, f.event_id, f.kind, f.path, f.file_type
-        FROM event e
-        INNER JOIN file f ON e.id = f.event_id
+        FROM event_log e
+        INNER JOIN file_log f ON e.id = f.event_id
         WHERE e.kind = ? AND e.date = ?
         ORDER BY event_id
         "#

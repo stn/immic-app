@@ -109,7 +109,7 @@ impl ApplicationInfo {
 
         let result = sqlx::query(
             r#"
-            INSERT INTO application (event_id, process_id, name, title, x, y, width, height)
+            INSERT INTO application_log (event_id, process_id, name, title, x, y, width, height)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             "#
         )
@@ -134,7 +134,7 @@ async fn insert_ref(id: i64) -> Result<i64> {
 
     let result = sqlx::query(
         r#"
-        INSERT INTO application (event_id, ref_id)
+        INSERT INTO application_log (event_id, ref_id)
         VALUES (?, ?)
         "#
     )
@@ -172,8 +172,8 @@ pub async fn list_applications(date: String) -> Result<Vec<ApplicationLog>, Stri
       (i64, i64, String, String, i64, i64, Option<i64>, Option<String>, Option<String>, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>)>(
         r#"
         SELECT e.id, e.timestamp, e.date, e.kind, a.id, a.event_id, a.process_id, a.name, a.title, a.x, a.y, a.width, a.height, a.ref_id
-        FROM event e
-        INNER JOIN application a ON e.id = a.event_id
+        FROM event_log e
+        INNER JOIN application_log a ON e.id = a.event_id
         WHERE e.kind = ? AND e.date = ?
         ORDER BY event_id
         "#

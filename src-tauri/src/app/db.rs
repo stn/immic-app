@@ -72,7 +72,7 @@ pub async fn insert_eventlog(datetime: DateTime<Utc>, kind: &str) -> Result<i64>
     let pool = pool();
     let result = sqlx::query(
         r#"
-        INSERT INTO event (timestamp, date, kind)
+        INSERT INTO event_log (timestamp, date, kind)
         VALUES (?, ?, ?)
         "#
     )
@@ -87,7 +87,7 @@ pub async fn insert_eventlog(datetime: DateTime<Utc>, kind: &str) -> Result<i64>
 pub async fn list_eventlog_dates() -> Result<Vec<String>, String> {
     let result: Vec<String> = sqlx::query_as::<_, (String,)>(r#"
         SELECT DISTINCT date
-        FROM event
+        FROM event_log
         ORDER BY date DESC
         "#
     )
@@ -108,7 +108,7 @@ pub async fn list_eventlog_on(date: String) -> Result<Vec<EventLog>, String> {
     let result: Vec<EventLog> = sqlx::query_as::<_, (i64, i64, String, String)>(
         r#"
         SELECT id, timestamp, date, kind
-        FROM event
+        FROM event_log
         WHERE date = ?
         ORDER BY id
         "#
@@ -135,7 +135,7 @@ pub async fn list_eventlog_on(date: String) -> Result<Vec<EventLog>, String> {
 //     let result: Vec<EventLog> = sqlx::query_as::<_, (i64, i64, String)>(
 //         r#"
 //         SELECT id, timestamp, date
-//         FROM event
+//         FROM event_log
 //         WHERE date = ? AND kind = ?
 //         ORDER BY id
 //         "#
