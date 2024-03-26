@@ -13,7 +13,7 @@ struct TauriAppState {
 #[actix_web::main]
 pub async fn init(app: AppHandle) -> std::io::Result<()> {
     let tauri_app = web::Data::new(TauriAppState {
-        app: Mutex::new(app),
+        app: Mutex::new(app.clone()),
     });
 
     HttpServer::new(move || {

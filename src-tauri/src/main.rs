@@ -5,6 +5,7 @@ mod app;
 mod plugins;
 
 use std::sync::Mutex;
+use app::setting;
 use dotenv::dotenv;
 use tauri::{Manager, State};
 use log::error;
@@ -12,7 +13,6 @@ use log::error;
 use app::db;
 use app::tray;
 use app::server;
-use app::setting::Setting;
 use plugins::Plugin;
 use plugins::application::ApplicationPlugin;
 use plugins::filelog::FilelogPlugin;
@@ -34,6 +34,12 @@ async fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
+            app::setting::setting_set,
+            app::setting::setting_get,
+            app::setting::setting_has,
+            app::setting::setting_delete,
+            app::setting::setting_load,
+            app::setting::setting_save,
             app::tray::quit_app,
             app::tray::show_main,
             app::tray::show_preferences,
@@ -55,24 +61,26 @@ async fn main() {
         .manage(Mutex::new(ApplicationPlugin::new()))
         .manage(Mutex::new(FilelogPlugin::new()))
         .setup(|app| {
-            let handle = Box::new(app.handle());
+            let app = app.handle();
+
+            // Initialize settings
+            setting::init(app.clone())?;
+
             tokio::spawn(async move {
-                db::init(&*handle).await;
+                db::init(&app).await;
 
-                handle.manage(Mutex::new(Setting::new(&*handle)));
-
-                let application: State<Mutex<ApplicationPlugin>> = handle.state();
+                let application: State<Mutex<ApplicationPlugin>> = app.state();
                 application.lock().unwrap().start();
 
-                let filelog: State<Mutex<FilelogPlugin>> = handle.state();
+                let filelog: State<Mutex<FilelogPlugin>> = app.state();
                 filelog.lock().unwrap().start();
 
-                let screenshot: State<Mutex<ScreenshotPlugin>> = handle.state();
+                let screenshot: State<Mutex<ScreenshotPlugin>> = app.state();
                 screenshot.lock().unwrap().start();
 
                 // server::init will block the thread
                 std::thread::spawn(move || {
-                    server::init(*handle).unwrap_or_else(|e| {
+                    server::init(app).unwrap_or_else(|e| {
                         error!("Server error: {}", e);
                     });
                 });
