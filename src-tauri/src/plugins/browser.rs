@@ -47,21 +47,50 @@ struct TabInfo {
 
 impl TabInfo {
     async fn insert(&self) -> Result<i64> {
+        assert!(self.url.is_some(), "url is required");
+
         let timestamp = DateTime::from_timestamp_millis(self.timestampMs).expect("Invalid timestamp");
         let event_id = db::insert_eventlog(timestamp, KIND).await?;
 
+        // Search browser_info by url
+        let result = sqlx::query_as::<_, (i64,)>(
+            r#"
+            SELECT id
+            FROM browser_info
+            WHERE url = ?
+            "#
+        )
+        .bind(&self.url)
+        .fetch_one(db::pool())
+        .await;
+        let info_id = match result {
+            Ok((id,)) => id,
+            Err(_) => {
+                let result = sqlx::query(
+                    r#"
+                    INSERT INTO browser_info (url, fav_icon_url)
+                    VALUES (?, ?)
+                    "#
+                )
+                .bind(&self.url)
+                .bind(&self.favIconUrl)
+                .execute(db::pool())
+                .await?;
+                result.last_insert_rowid()
+            }
+        };
+
         let result = sqlx::query(
             r#"
-            INSERT INTO browser_log (event_id, tab_id, url, title, fav_icon_url, referrer, opener_tab_id, window_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO browser_log (event_id, info_id, title, referrer, tab_id, opener_tab_id, window_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             "#
         )
         .bind(event_id)
-        .bind(self.tabId)
-        .bind(self.url.as_ref())
+        .bind(info_id)
         .bind(self.title.as_ref())
-        .bind(self.favIconUrl.as_ref())
         .bind(self.referrer.as_ref())
+        .bind(self.tabId)
         .bind(self.openerTabId)
         .bind(self.windowId)
         .execute(db::pool())
@@ -92,28 +121,35 @@ pub struct BrowserLog {
     pub event_id: i64,
     pub timestamp: i64,
     pub date: String,
-    pub tab_id: Option<i64>,
-    pub url: Option<String>,
+    pub info_id: i64,
     pub title: Option<String>,
-    pub fav_icon_url: Option<String>,
     pub referrer: Option<String>,
+    pub tab_id: Option<i64>,
     pub opener_tab_id: Option<i64>,
     pub window_id: Option<i64>,
 }
 
+#[derive(Debug, serde::Serialize)]
+pub struct BrowserInfo {
+    pub id: i64,
+    pub url: String,
+    pub fav_icon_url: Option<String>,
+}
+
 #[tauri::command]
-pub async fn list_browsers(date: String) -> Result<Vec<BrowserLog>, String> {
+pub async fn list_browser_logs(date: String) -> Result<Vec<BrowserLog>, String> {
     debug!("list_browsers: date: {}", date);
     let browser_logs = sqlx::query_as::<_,
-      (i64, i64, String, String, i64, i64, Option<i64>, Option<String>, Option<String>, Option<String>, Option<String>, Option<i64>, Option<i64>)>(
+      (i64, i64, String, String, i64,
+       i64, i64, Option<String>, Option<String>, Option<i64>, Option<i64>, Option<i64>)>(
         r#"
         SELECT
           e.id, e.timestamp, e.date, e.kind, e.log_id,
-          b.id, b.tab_id, b.url, b.title, b.fav_icon_url, b.referrer, b.opener_tab_id, b.window_id
+          b.id, b.info_id, b.title, b.referrer, b.tab_id, b.opener_tab_id, b.window_id
         FROM event_log e
         INNER JOIN browser_log b ON e.log_id = b.id
         WHERE e.kind = ? AND e.date = ?
-        ORDER BY event_id
+        ORDER BY e.timestamp
         "#
     )
     .bind(KIND)
@@ -123,17 +159,17 @@ pub async fn list_browsers(date: String) -> Result<Vec<BrowserLog>, String> {
     .unwrap_or(Vec::new())
     .iter()
     .map(|row| {
-        let (event_id, timestamp, date, _, id, _, tab_id, url, title, fav_icon_url, referrer, opener_tab_id, window_id) = row;
+        let (event_id, timestamp, date, _, _,
+             id, info_id, title, referrer, tab_id, opener_tab_id, window_id) = row;
         BrowserLog {
             id: *id,
             event_id: *event_id,
             timestamp: *timestamp,
             date: date.clone(),
-            tab_id: *tab_id,
-            url: url.clone(),
+            info_id: *info_id,
             title: title.clone(),
-            fav_icon_url: fav_icon_url.clone(),
             referrer: referrer.clone(),
+            tab_id: *tab_id,
             opener_tab_id: *opener_tab_id,
             window_id: *window_id,
         }
@@ -141,4 +177,28 @@ pub async fn list_browsers(date: String) -> Result<Vec<BrowserLog>, String> {
     .collect();
     debug!("list_browsers: browser_logs: {:?}", browser_logs);
     Ok(browser_logs)
+}
+
+#[tauri::command]
+pub async fn get_browser_info(browser_id: i64) -> Result<BrowserInfo, String> {
+    debug!("get_browser_info: browser_id={}", browser_id);
+
+    sqlx::query_as::<_, (i64, String, Option<String>)>(
+        r#"
+        SELECT id, url, fav_icon_url
+        FROM browser_info
+        WHERE id = ?
+        "#
+    )
+    .bind(browser_id)
+    .fetch_one(db::pool())
+    .await
+    .map_or(Err("Not found".to_string()), |row| {
+        let (id, url, fav_icon_url) = row;
+        Ok(BrowserInfo {
+            id: id,
+            url: url,
+            fav_icon_url: fav_icon_url,
+        })
+    })
 }
