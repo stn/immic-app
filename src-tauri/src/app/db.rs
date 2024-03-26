@@ -1,10 +1,13 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use log::debug;
+use log::info;
+use std::path::PathBuf;
 use std::sync::OnceLock;
 use sqlx::Sqlite;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
 use tauri::AppHandle;
+
+use super::setting::with_setting;
 
 #[derive(Debug, serde::Serialize)]
 pub struct EventLog {
@@ -23,7 +26,7 @@ pub fn pool() -> &'static sqlx::Pool<Sqlite> {
 pub async fn init(app: &tauri::AppHandle) {
     POOL.get_or_init(|| {
         let options = SqliteConnectOptions::new()
-            .filename(db_path(app)) // appを使う https://github.com/stn/immic-app/issues/9
+            .filename(db_path(&app))
             .create_if_missing(true)
             .journal_mode(SqliteJournalMode::Wal)
             .synchronous(SqliteSynchronous::Normal);
@@ -31,10 +34,24 @@ pub async fn init(app: &tauri::AppHandle) {
             .connect_lazy_with(options);
         pool
     });
+    
     // TODO migrateのバージョンを確認して実行するべきかを判断する
     // after_connectを使うといいかもしれない。
     // https://docs.rs/sqlx/latest/sqlx/pool/struct.PoolOptions.html#method.after_connect
     migrate().await.unwrap();
+}
+
+fn db_path(app: &AppHandle) -> String {
+    let data_dir: Option<PathBuf> = with_setting(app.clone(), |store| {
+        match store.get("data-dir").and_then(|v| v.as_str()) {
+            Some(dir) => Ok(Some(PathBuf::from(dir))),
+            None => Ok(app.path_resolver().app_data_dir()),
+        }
+    }).expect("failed to get data-dir");
+    let data_dir = data_dir.map_or(".".to_string(), |v| v.to_string_lossy().to_string());
+    let db_path = data_dir + "/immic.db";
+    info!("db_path: {}", db_path);
+    db_path
 }
 
 async fn migrate() -> sqlx::Result<()> {
@@ -140,13 +157,3 @@ pub async fn list_eventlog_on(date: String) -> Result<Vec<EventLog>, String> {
 //     .collect();
 //     Ok(result)
 // }
-
-fn db_path(app: &AppHandle) -> String {
-    if let Ok(path) = std::env::var("DB_PATH") {
-        debug!("DB_PATH: {:?}", path);
-        if path != "" {
-            return path;
-        }
-    }
-    "immic.db".to_string()
-}
