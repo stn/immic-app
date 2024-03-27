@@ -89,7 +89,7 @@ impl Screenshot {
         )
         .bind(event_id)
         .bind(self.monitor)
-        .execute(db::pool())
+        .execute(db::pool().unwrap())
         .await?;
 
         // Update event_log with log_id
@@ -161,7 +161,7 @@ pub async fn list_screenshots(date: &str) -> Result<Vec<String>, String> {
     )
     .bind(KIND)
     .bind(date)
-    .fetch_all(db::pool())
+    .fetch_all(db::pool().unwrap())
     .await
     .unwrap_or(Vec::new())
     .iter()

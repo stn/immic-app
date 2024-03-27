@@ -19,8 +19,8 @@ pub struct EventLog {
 
 static POOL: OnceLock<sqlx::Pool<Sqlite>> = OnceLock::new();
 
-pub fn pool() -> &'static sqlx::Pool<Sqlite> {
-    POOL.get().expect("DB pool is not initialized")
+pub fn pool() -> Option<&'static sqlx::Pool<Sqlite>> {
+    POOL.get()
 }
 
 pub async fn init(app: &tauri::AppHandle) -> Result<()> {
@@ -64,13 +64,15 @@ fn db_path(app: &AppHandle) -> Result<String> {
 
 async fn migrate() -> sqlx::Result<()> {
     sqlx::migrate!("./migrations")
-        .run(pool())
+        .run(pool().unwrap())
         .await?;
     Ok(())
 }
 
 pub async fn close() {
-    pool().close().await;
+    if let Some(pool) = pool() {
+        pool.close().await;
+    }
 }
 
 pub async fn insert_eventlog(datetime: DateTime<Utc>, kind: &str) -> Result<i64> {
@@ -90,7 +92,7 @@ pub async fn insert_eventlog(datetime: DateTime<Utc>, kind: &str) -> Result<i64>
     .bind(timeframe)
     .bind(date)
     .bind(kind)
-    .execute(pool).await?;
+    .execute(pool.unwrap()).await?;
     Ok(result.last_insert_rowid())
 }
 
@@ -105,7 +107,7 @@ pub async fn update_eventlog_logid(id: i64, log_id: i64) -> Result<()> {
     )
     .bind(log_id)
     .bind(id)
-    .execute(pool).await?;
+    .execute(pool.unwrap()).await?;
     Ok(())
 }
 
@@ -117,7 +119,7 @@ pub async fn list_eventlog_dates() -> Result<Vec<String>, String> {
         ORDER BY date DESC
         "#
     )
-    .fetch_all(pool())
+    .fetch_all(pool().unwrap())
     .await
     .unwrap_or(Vec::new())
     .iter()
@@ -140,7 +142,7 @@ pub async fn list_eventlog_on(date: String) -> Result<Vec<EventLog>, String> {
         "#
     )
     .bind(date)
-    .fetch_all(pool())
+    .fetch_all(pool().unwrap())
     .await
     .unwrap_or(Vec::new())
     .iter()
