@@ -232,7 +232,7 @@ pub async fn list_application_logs(date: String) -> Result<Vec<ApplicationLog>, 
     .unwrap_or(Vec::new())
     .iter()
     .map(|row| {
-        let (event_id, timestamp, date, _, _,
+        let (event_id, timestamp, date, _kind, _log_id,
              id, info_id, process_id, title, x, y, width, height, ref_id
             ) = row;
         ApplicationLog {

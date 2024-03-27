@@ -261,7 +261,7 @@ pub async fn list_file_logs(date: String) -> Result<Vec<FileLog>, String> {
     .unwrap_or(Vec::new())
     .iter()
     .map(|row| {
-        let (event_id, timestamp, date, _, _,
+        let (event_id, timestamp, date, _kind, _log_id,
              id, info_id, kind,
         ) = row;
         FileLog {

@@ -159,7 +159,7 @@ pub async fn list_browser_logs(date: String) -> Result<Vec<BrowserLog>, String> 
     .unwrap_or(Vec::new())
     .iter()
     .map(|row| {
-        let (event_id, timestamp, date, _, _,
+        let (event_id, timestamp, date, _kind, _log_id,
              id, info_id, title, referrer, tab_id, opener_tab_id, window_id) = row;
         BrowserLog {
             id: *id,
