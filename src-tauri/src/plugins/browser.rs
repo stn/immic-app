@@ -5,32 +5,32 @@ use chrono::DateTime;
 use log::{debug, error};
 
 use crate::app::db;
-use crate::plugins::Plugin;
+// use crate::plugins::Plugin;
 
 const KIND: &str = "browser";
 
-pub struct BrowserPlugin {
-    // running: Arc<Mutex<bool>>,
-}
+// pub struct BrowserPlugin {
+//     // running: Arc<Mutex<bool>>,
+// }
 
-impl BrowserPlugin {
-    pub fn new() -> BrowserPlugin {
-        BrowserPlugin {
-            // running: Arc::new(Mutex::new(false)),
-        }
-    }
-}
+// impl BrowserPlugin {
+//     pub fn new() -> BrowserPlugin {
+//         BrowserPlugin {
+//             // running: Arc::new(Mutex::new(false)),
+//         }
+//     }
+// }
 
-impl Plugin for BrowserPlugin {
-    fn start(&mut self) {
-        // *self.running.lock().unwrap() = true;
-        // let running = Arc::clone(&self.running);
-    }
+// impl Plugin for BrowserPlugin {
+//     fn start(&mut self) {
+//         // *self.running.lock().unwrap() = true;
+//         // let running = Arc::clone(&self.running);
+//     }
 
-    fn stop(&mut self) {
-        // *self.running.lock().unwrap() = false;
-    }
-}
+//     fn stop(&mut self) {
+//         // *self.running.lock().unwrap() = false;
+//     }
+// }
 
 #[derive(Debug, PartialEq, serde::Deserialize)]
 #[allow(non_snake_case)]

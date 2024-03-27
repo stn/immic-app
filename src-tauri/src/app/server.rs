@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+// use std::sync::Mutex;
 
 use actix_cors::Cors;
 use actix_web::{http, middleware, web, App, HttpServer};
@@ -7,18 +7,18 @@ use tauri::AppHandle;
 use crate::plugins::browser;
 
 struct TauriAppState {
-    app: Mutex<AppHandle>,
+    // app: Mutex<AppHandle>,
 }
 
 #[actix_web::main]
-pub async fn init(app: AppHandle) -> std::io::Result<()> {
+pub async fn init(_app: AppHandle) -> std::io::Result<()> {
     let tauri_app = web::Data::new(TauriAppState {
-        app: Mutex::new(app.clone()),
+        // app: Mutex::new(app.clone()),
     });
 
     HttpServer::new(move || {
         let cors = Cors::default()
-            .allowed_origin_fn(|origin, _req_head| {
+            .allowed_origin_fn(|_origin, _req_head| {
                 true
             })
             .allowed_methods(vec!["GET", "POST"])

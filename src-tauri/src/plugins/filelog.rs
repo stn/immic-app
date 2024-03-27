@@ -28,7 +28,7 @@ impl Plugin for FilelogPlugin {
 
         let (tx, mut rx) = mpsc::channel::<Vec<FileEventInfo>>(32);
 
-        let manager = tokio::spawn(async move {
+        let _manager = tokio::spawn(async move {
             while let Some(infos) = rx.recv().await {
                 debug!("Received file_event_infos: {:?}", infos);
                 for info in infos.iter() {
