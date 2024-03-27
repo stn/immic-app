@@ -6,23 +6,21 @@ import * as GS from "@tauri-apps/api/globalShortcut";
 import "./App.css";
 import { ApplicationLog, BrowserLog, FileLog } from "./events";
 
-async function quitApp() {
-  await invoke("quit_app");
-}
+// async function quitApp() {
+//   await invoke("quit_app");
+// }
 
 async function showMain() {
   await invoke("show_main");
 }
 
-async function showPreferences() {
-  await invoke("show_preferences");
-}
+// async function showPreferences() {
+//   await invoke("show_preferences");
+// }
 
 function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
   const [dates, setDates] = useState<string[]>([]);
-  const [date, setDate] = useState<string>('');
+  // const [date, setDate] = useState<string>('');
   const [applications, setApplications] = useState<ApplicationLog[]>([]);
   const [browsers, setBrowsers] = useState<BrowserLog[]>([]);
   const [filelogs, setFilelogs] = useState<FileLog[]>([]);
@@ -86,19 +84,13 @@ function App() {
           listDates();
         }}
       >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
         <button type="submit">Greet</button>
       </form>
 
-      <p>{greetMsg}</p>
       <div>
         {dates.map((date) => (
           <button key={date} onClick={() => {
-            setDate(date);
+            // setDate(date);
             listApplicationLogs(date);
             listBrowserLogs(date);
             listFileLogs(date);
