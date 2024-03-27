@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{ensure, Result};
 use chrono::{DateTime, Utc};
 use log::info;
 use std::path::PathBuf;
@@ -23,10 +23,12 @@ pub fn pool() -> &'static sqlx::Pool<Sqlite> {
     POOL.get().expect("DB pool is not initialized")
 }
 
-pub async fn init(app: &tauri::AppHandle) {
+pub async fn init(app: &tauri::AppHandle) -> Result<()> {
+    let path = db_path(app)?;
+
     POOL.get_or_init(|| {
         let options = SqliteConnectOptions::new()
-            .filename(db_path(&app))
+            .filename(path)
             .create_if_missing(true)
             .journal_mode(SqliteJournalMode::Wal)
             .synchronous(SqliteSynchronous::Normal);
@@ -39,19 +41,25 @@ pub async fn init(app: &tauri::AppHandle) {
     // after_connectを使うといいかもしれない。
     // https://docs.rs/sqlx/latest/sqlx/pool/struct.PoolOptions.html#method.after_connect
     migrate().await.unwrap();
+
+    Ok(())
 }
 
-fn db_path(app: &AppHandle) -> String {
-    let data_dir: Option<PathBuf> = with_setting(app.clone(), |store| {
-        match store.get("data-dir").and_then(|v| v.as_str()) {
-            Some(dir) => Ok(Some(PathBuf::from(dir))),
-            None => Ok(app.path_resolver().app_data_dir()),
-        }
-    }).expect("failed to get data-dir");
-    let data_dir = data_dir.map_or(".".to_string(), |v| v.to_string_lossy().to_string());
-    let db_path = data_dir + "/immic.db";
+fn db_path(app: &AppHandle) -> Result<String> {
+    let db_path_buf = with_setting(app.clone(), |store| {
+        Ok(store.get("data-dir")
+            .and_then(|v| v.as_str())
+            .map(PathBuf::from))
+    })?;
+    ensure!(db_path_buf.is_some(), "data-dir is not set");
+
+    let mut db_path_buf = db_path_buf.unwrap();
+    db_path_buf.push("immic.db");
+    let db_path = db_path_buf.to_string_lossy().to_string();
+
     info!("db_path: {}", db_path);
-    db_path
+
+    Ok(db_path)
 }
 
 async fn migrate() -> sqlx::Result<()> {
