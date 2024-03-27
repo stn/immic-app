@@ -26,34 +26,36 @@ impl Plugin for ApplicationPlugin {
         *self.running.lock().unwrap() = true;
         let running = Arc::clone(&self.running);
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
-        let app = self;
+        // let app = self;
         tokio::spawn(async move {
-            let mut last_info = None;
+            let mut last_win_info = None;
             let mut last_id = -1;
+            let mut last_info_id = -1;
             loop {
                 if !*running.lock().unwrap() {
                     break;
                 }
                 interval.tick().await;
 
-                let info = check_application().await;
+                let win_info = check_application().await;
 
                 // check if the last info is the same as the current info
-                if info == last_info {
+                if win_info == last_win_info {
                     debug!("check_application: same as last info");
-                    if let Err(e) = insert_ref(last_id).await {
+                    if let Err(e) = insert_ref(last_id, last_info_id).await {
                         debug!("check_application: Error on inserting ref: {:?}", e);
                     }
                     continue;
                 }
 
-                if let Some(info) = info {
-                    debug!("check_application: {:?}", info);
-                    let id = info.insert().await;
-                    match id {
-                        Ok(id) => {
-                            last_info = Some(info);
+                if let Some(win_info) = win_info {
+                    debug!("check_application: {:?}", win_info);
+                    let ids = win_info.insert().await;
+                    match ids {
+                        Ok((id, info_id)) => {
+                            last_win_info = Some(win_info);
                             last_id = id;
+                            last_info_id = info_id;
                         },
                         Err(e) => {
                             debug!("check_application: Error on inserting application_info: {:?}", e);
@@ -105,7 +107,7 @@ struct WinInfo {
 }
 
 impl WinInfo {
-    async fn insert(&self) -> Result<i64> {
+    async fn insert(&self) -> Result<(i64, i64)> {
         let timestamp = chrono::Utc::now();
         let event_id = db::insert_eventlog(timestamp, KIND).await?;
 
@@ -158,21 +160,22 @@ impl WinInfo {
         // Update event_log with log_id
         let log_id = result.last_insert_rowid();
         db::update_eventlog_logid(event_id, log_id).await?;
-        Ok(log_id)
+        Ok((log_id, info_id))
     }
 }
 
-async fn insert_ref(ref_id: i64) -> Result<i64> {
+async fn insert_ref(ref_id: i64, info_id: i64) -> Result<i64> {
     let timestamp = chrono::Utc::now();
     let event_id = db::insert_eventlog(timestamp, KIND).await?;
 
     let result = sqlx::query(
         r#"
-        INSERT INTO application_log (event_id, ref_id)
-        VALUES (?, ?)
+        INSERT INTO application_log (event_id, info_id, ref_id)
+        VALUES (?, ?, ?)
         "#
     )
     .bind(event_id)
+    .bind(info_id)
     .bind(ref_id)
     .execute(db::pool().unwrap())
     .await?;
