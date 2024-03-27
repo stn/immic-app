@@ -69,7 +69,10 @@ async fn main() {
             setting::init(app.clone())?;
 
             tokio::spawn(async move {
-                db::init(&app).await;
+                if let Err(e) = db::init(&app).await {
+                    error!("DB error: {}", e);
+                    return;
+                }
 
                 let application: State<Mutex<ApplicationPlugin>> = app.state();
                 application.lock().unwrap().start();
