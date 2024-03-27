@@ -1,4 +1,6 @@
-use chrono::Local;
+use anyhow::Result;
+use chrono::{DateTime, Utc};
+use image::RgbaImage;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use log::{debug, error};
@@ -10,7 +12,10 @@ use xcap::Monitor;
 use tauri::AppHandle;
 use tauri::http;
 
+use crate::app::db;
 use crate::plugins::Plugin;
+
+const KIND: &str = "screenshot";
 
 pub struct ScreenshotPlugin {
     running: Arc<Mutex<bool>>,
@@ -35,7 +40,9 @@ impl Plugin for ScreenshotPlugin {
                     break;
                 }
                 interval.tick().await;
-                take_screenshot();
+                take_screenshot().await.unwrap_or_else(|e| {
+                    error!("Error on taking screenshot: {:?}", e);
+                });
             }
         });
     }
@@ -45,15 +52,55 @@ impl Plugin for ScreenshotPlugin {
     }
 }
 
-fn take_screenshot() {
+async fn take_screenshot() -> Result<()> {
     debug!("screenshot");
     let monitors = Monitor::all().unwrap();
 
     for monitor in monitors {
-        let mut image = monitor.capture_image().unwrap();
-        let dt = Local::now();
+        let screenshot = Screenshot {
+            monitor: monitor.id() as i64,
+            timestamp: chrono::Utc::now(),
+            image: monitor.capture_image().unwrap(),
+        };
+        // TODO: run in a separate thread
+        screenshot.save().await?;
+        screenshot.insert().await?;
+
+        break; // save only the first screen for now
+    }
+    Ok(())
+}
+
+struct Screenshot {
+    monitor: i64,
+    timestamp: DateTime<Utc>,
+    image: RgbaImage,
+}
+
+impl Screenshot {
+    async fn insert(&self) -> Result<i64> {
+        let event_id = db::insert_eventlog(self.timestamp, KIND).await?;
+
+        let result = sqlx::query(
+            r#"
+            INSERT INTO screenshot (event_id, monitor_id)
+            VALUES (?, ?)
+            "#
+        )
+        .bind(event_id)
+        .bind(self.monitor)
+        .execute(db::pool())
+        .await?;
+
+        // Update event_log with log_id
+        let log_id = result.last_insert_rowid();
+        db::update_eventlog_logid(event_id, log_id).await?;
+        Ok(log_id)
+    }
+
+    async fn save(&self) -> Result<()> {
         // Create directories if not exists
-        let base_dir = Path::new(r"F:\immic-dev");
+        let base_dir = Path::new(r"F:\immic-dev"); // TODO settingのdata-dirを使う
         if !base_dir.exists() {
             std::fs::create_dir(&base_dir).unwrap();
         }
@@ -61,21 +108,22 @@ fn take_screenshot() {
         if !screen_dir.exists() {
             std::fs::create_dir(&screen_dir).unwrap();
         }
-        let date_dir = screen_dir.join(dt.format("%Y%m%d").to_string());
+        let date_dir = screen_dir.join(self.timestamp.format("%Y%m%d").to_string());
         if !date_dir.exists() {
             std::fs::create_dir(&date_dir).unwrap();
         }
-        let filename = format!("{}-{}.jpg", dt.format("%H%M%S"), monitor.id());
+        let filename = format!("{}-{}.jpg", self.timestamp.format("%H%M%S"), self.monitor);
         let path = date_dir.join(filename);
-        image.save(path).unwrap();
+
+        self.image.save(path).unwrap();
 
         // thumbnail
-        let width = image.width() / 8;
-        let height = image.height() / 8;
+        let width = self.image.width() / 8;
+        let height = self.image.height() / 8;
+        let mut image = self.image.clone();
         let thumb = image::imageops::thumbnail(&mut image, width, height);
-        thumb.save(date_dir.join(format!("{}-{}-t.jpg", dt.format("%H%M%S"), monitor.id()))).unwrap();
-
-        break; // save only the first screen for now
+        thumb.save(date_dir.join(format!("{}-{}-t.jpg", self.timestamp.format("%H%M%S"), self.monitor))).unwrap();
+        Ok(())
     }
 }
 
