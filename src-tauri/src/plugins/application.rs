@@ -118,7 +118,7 @@ impl WinInfo {
             "#
         )
         .bind(&self.path)
-        .fetch_one(db::pool())
+        .fetch_one(db::pool().unwrap())
         .await;
         let info_id = match result {
             Ok((id,)) => id,
@@ -132,7 +132,7 @@ impl WinInfo {
                 )
                 .bind(&self.path)
                 .bind(&self.name)
-                .execute(db::pool())
+                .execute(db::pool().unwrap())
                 .await?;
                 result.last_insert_rowid()
             }
@@ -152,7 +152,7 @@ impl WinInfo {
         .bind(self.y)
         .bind(self.width)
         .bind(self.height)
-        .execute(db::pool())
+        .execute(db::pool().unwrap())
         .await?;
 
         // Update event_log with log_id
@@ -174,7 +174,7 @@ async fn insert_ref(ref_id: i64) -> Result<i64> {
     )
     .bind(event_id)
     .bind(ref_id)
-    .execute(db::pool())
+    .execute(db::pool().unwrap())
     .await?;
 
     // Update event_log with log_id
@@ -227,7 +227,7 @@ pub async fn list_application_logs(date: String) -> Result<Vec<ApplicationLog>, 
     )
     .bind(KIND)
     .bind(date)
-    .fetch_all(db::pool())
+    .fetch_all(db::pool().unwrap())
     .await
     .unwrap_or(Vec::new())
     .iter()
@@ -267,7 +267,7 @@ pub async fn get_application_info(app_id: i64) -> Result<ApplicationInfo, String
         "#
     )
     .bind(app_id)
-    .fetch_one(db::pool())
+    .fetch_one(db::pool().unwrap())
     .await
     .map_or(Err("Not found".to_string()), |row| {
         let (id, path, name) = row;

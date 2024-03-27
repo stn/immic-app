@@ -61,7 +61,7 @@ impl TabInfo {
             "#
         )
         .bind(&self.url)
-        .fetch_one(db::pool())
+        .fetch_one(db::pool().unwrap())
         .await;
         let info_id = match result {
             Ok((id,)) => id,
@@ -74,7 +74,7 @@ impl TabInfo {
                 )
                 .bind(&self.url)
                 .bind(&self.favIconUrl)
-                .execute(db::pool())
+                .execute(db::pool().unwrap())
                 .await?;
                 result.last_insert_rowid()
             }
@@ -93,7 +93,7 @@ impl TabInfo {
         .bind(self.tabId)
         .bind(self.openerTabId)
         .bind(self.windowId)
-        .execute(db::pool())
+        .execute(db::pool().unwrap())
         .await?;
 
         // Update event_log with log_id
@@ -154,7 +154,7 @@ pub async fn list_browser_logs(date: String) -> Result<Vec<BrowserLog>, String> 
     )
     .bind(KIND)
     .bind(date)
-    .fetch_all(db::pool())
+    .fetch_all(db::pool().unwrap())
     .await
     .unwrap_or(Vec::new())
     .iter()
@@ -191,7 +191,7 @@ pub async fn get_browser_info(browser_id: i64) -> Result<BrowserInfo, String> {
         "#
     )
     .bind(browser_id)
-    .fetch_one(db::pool())
+    .fetch_one(db::pool().unwrap())
     .await
     .map_or(Err("Not found".to_string()), |row| {
         let (id, url, fav_icon_url) = row;

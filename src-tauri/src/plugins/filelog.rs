@@ -98,7 +98,7 @@ impl FileEventInfo {
             "#
         )
         .bind(&self.path)
-        .fetch_one(db::pool())
+        .fetch_one(db::pool().unwrap())
         .await;
         let info_id = match result {
             Ok((id,)) => id,
@@ -112,7 +112,7 @@ impl FileEventInfo {
                 )
                 .bind(&self.path)
                 .bind(&self.file_type.to_string())
-                .execute(db::pool())
+                .execute(db::pool().unwrap())
                 .await?;
                 result.last_insert_rowid()
             }
@@ -127,7 +127,7 @@ impl FileEventInfo {
         .bind(event_id)
         .bind(info_id)
         .bind(&self.kind.to_string())
-        .execute(db::pool())
+        .execute(db::pool().unwrap())
         .await?;
 
         // Update event_log with log_id
@@ -256,7 +256,7 @@ pub async fn list_file_logs(date: String) -> Result<Vec<FileLog>, String> {
     )
     .bind(KIND)
     .bind(date)
-    .fetch_all(db::pool())
+    .fetch_all(db::pool().unwrap())
     .await
     .unwrap_or(Vec::new())
     .iter()
@@ -290,7 +290,7 @@ pub async fn get_file_info(file_id: i64) -> Result<FileInfo, String> {
         "#
     )
     .bind(file_id)
-    .fetch_one(db::pool())
+    .fetch_one(db::pool().unwrap())
     .await
     .map_or(Err("Not found".to_string()), |row| {
         let (id, path, file_type) = row;
