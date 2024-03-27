@@ -51,8 +51,7 @@ async fn main() {
             plugins::browser::get_browser_info,
             plugins::filelog::list_file_logs,
             plugins::filelog::get_file_info,
-            plugins::screen::list_screens,
-            plugins::screen::list_screen_dates,
+            plugins::screen::list_screenshots,
         ])
         .register_uri_scheme_protocol(
             "iss",

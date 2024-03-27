@@ -6,7 +6,7 @@ use regex::Regex;
 use log::{debug, error};
 use std::error::Error;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use xcap::Monitor;
 use tauri::AppHandle;
@@ -99,22 +99,7 @@ impl Screenshot {
     }
 
     async fn save(&self) -> Result<()> {
-        // Create directories if not exists
-        let base_dir = Path::new(r"F:\immic-dev"); // TODO settingのdata-dirを使う
-        if !base_dir.exists() {
-            std::fs::create_dir(&base_dir).unwrap();
-        }
-        let screen_dir = base_dir.join("screen");
-        if !screen_dir.exists() {
-            std::fs::create_dir(&screen_dir).unwrap();
-        }
-        let date_dir = screen_dir.join(self.timestamp.format("%Y%m%d").to_string());
-        if !date_dir.exists() {
-            std::fs::create_dir(&date_dir).unwrap();
-        }
-        let filename = format!("{}-{}.jpg", self.timestamp.format("%H%M%S"), self.monitor);
-        let path = date_dir.join(filename);
-
+        let (path, thumb_path) = image_path(self.timestamp, self.monitor);
         self.image.save(path).unwrap();
 
         // thumbnail
@@ -122,9 +107,85 @@ impl Screenshot {
         let height = self.image.height() / 8;
         let mut image = self.image.clone();
         let thumb = image::imageops::thumbnail(&mut image, width, height);
-        thumb.save(date_dir.join(format!("{}-{}-t.jpg", self.timestamp.format("%H%M%S"), self.monitor))).unwrap();
+        thumb.save(thumb_path).unwrap();
+
         Ok(())
     }
+}
+
+fn image_path(timestamp: DateTime<Utc>, monitor_id: i64) -> (PathBuf, PathBuf) {
+    // Create directories if not exists
+    let base_dir = Path::new(r"F:\immic-dev"); // TODO settingのdata-dirを使う
+    if !base_dir.exists() {
+        std::fs::create_dir(&base_dir).unwrap();
+    }
+    let screen_dir = base_dir.join("screen");
+    if !screen_dir.exists() {
+        std::fs::create_dir(&screen_dir).unwrap();
+    }
+    let date_dir = screen_dir.join(timestamp.format("%Y%m%d").to_string());
+    if !date_dir.exists() {
+        std::fs::create_dir(&date_dir).unwrap();
+    }
+    let filename = format!("{}-{}.jpg", timestamp.format("%H%M%S"), monitor_id);
+    let path = date_dir.join(filename);
+    let thumb_path = date_dir.join(format!("{}-{}-t.jpg", timestamp.format("%H%M%S"), monitor_id));
+
+    (path, thumb_path)
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct ScreenshotLog {
+    pub id: i64,
+    pub event_id: i64,
+    pub timestamp: i64,
+    pub date: String,
+    pub monitor_id: i64,
+}
+
+#[tauri::command]
+pub async fn list_screenshots(date: &str) -> Result<Vec<String>, String> {
+    debug!("list_screenshots: date: {}", date);
+    let screenshot_logs: Vec<ScreenshotLog> = sqlx::query_as::<_,
+      (i64, i64, String, String, i64,
+       i64, i64)>(
+        r#"
+        SELECT
+          e.id, e.timestamp, e.date, e.kind, e.log_id,
+          s.id, s.monitor_id
+        FROM event_log e
+        INNER JOIN screenshot s ON e.log_id = s.id
+        WHERE e.kind = ? AND e.date = ?
+        ORDER BY e.timestamp
+        "#
+    )
+    .bind(KIND)
+    .bind(date)
+    .fetch_all(db::pool())
+    .await
+    .unwrap_or(Vec::new())
+    .iter()
+    .map(|row| {
+        let (event_id, timestamp, date, _kind, _log_id,
+             id, monitor_id,
+            ) = row;
+        ScreenshotLog {
+            id: *id,
+            event_id: *event_id,
+            timestamp: *timestamp,
+            date: date.clone(),
+            monitor_id: *monitor_id,
+        }
+    })
+    .collect();
+    debug!("list_screenshots: screenshot_logs: {:?}", screenshot_logs);
+
+    let screenshots: Vec<String> = screenshot_logs.iter().map(|log| {
+        let timestamp = DateTime::from_timestamp(log.timestamp, 0).unwrap();
+        format!("{}/{}-{}", timestamp.format("%Y%m%d"), timestamp.format("%H%M%S"), log.monitor_id)
+    }).collect();
+
+    Ok(screenshots)
 }
 
 pub fn handle_iss_protocol(_app: &AppHandle, request: &http::Request) -> Result<http::Response, Box<dyn Error>> {
@@ -138,7 +199,7 @@ pub fn handle_iss_protocol(_app: &AppHandle, request: &http::Request) -> Result<
     let mut parts = uri[16..].split('/');
     let date = parts.next().unwrap();
     let filename = parts.next().unwrap();
-    let base_dir = Path::new(r"F:\immic-dev");
+    let base_dir = Path::new(r"F:\immic-dev"); // TODO use data-dir from setting
     let screen_dir = base_dir.join("screen");
     let date_dir = screen_dir.join(date);
     let path = date_dir.join(format!("{}.jpg", filename));
@@ -162,49 +223,6 @@ fn check_iss_uri(uri: &str) -> bool {
     }
     error!("Invalid uri: {}", uri);
     false
-}
- 
-
-#[tauri::command]
-pub fn list_screen_dates() -> Result<Vec<String>, String> {
-    // List all screenshot dates
-    let base_dir = Path::new(r"F:\immic-dev");
-    let screen_dir = base_dir.join("screen");
-    let mut dates = vec![];
-    if screen_dir.exists() {
-        let paths = std::fs::read_dir(screen_dir).unwrap();
-        for path in paths {
-            let path = path.unwrap().path();
-            if path.is_dir() {
-                let date = path.file_name().unwrap().to_str().unwrap().to_string();
-                dates.push(date);
-            }
-        }
-    }
-    Ok(dates)
-}
-
-#[tauri::command]
-pub fn list_screens(date: &str) -> Result<Vec<String>, String> {
-    static RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^(\d{6}-[A-Za-z0-9]+)\.jpg$").unwrap());
-    // List all screenshots in a date
-    let base_dir = Path::new(r"F:\immic-dev");
-    let screen_dir = base_dir.join("screen");
-    let date_dir = screen_dir.join(date);
-    let mut screenshots = vec![];
-    if date_dir.exists() {
-        let paths = std::fs::read_dir(date_dir).unwrap();
-        for path in paths {
-            let path = path.unwrap().path();
-            let filename = path.file_name().unwrap().to_str().unwrap();
-            if RE.is_match(&filename) && path.is_file() {
-                let caps = RE.captures(&filename).unwrap();
-                let image_name = &caps[1];
-                screenshots.push(image_name.to_string());
-            }
-        }
-    }
-    Ok(screenshots)
 }
 
 #[cfg(test)]

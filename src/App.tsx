@@ -44,12 +44,8 @@ function App() {
     setFilelogs(await invoke("list_file_logs", { date }));
   }
 
-  async function listScreens(date: string) {
-    setScreens(await invoke("list_screens", { date }));
-  }
-
-  async function listScreenDates(date: string) {
-    setScreens(await invoke("list_screen_dates", { date }));
+  async function listScreenshots(date: string) {
+    setScreens(await invoke("list_screenshots", { date }));
   }
 
   useEffect(() => {
@@ -106,7 +102,7 @@ function App() {
             listApplicationLogs(date);
             listBrowserLogs(date);
             listFileLogs(date);
-            listScreens(date);
+            listScreenshots(date);
           }}>
             {date}
           </button>
@@ -130,7 +126,7 @@ function App() {
       <div>
         {screens.map((screen) => (
           // <div key={screen}>{screen}</div>
-          <img key={screen} src={'https://iss.localhost/' + date + '/' + screen + '-t'} alt={screen} />
+          <img key={screen} src={'https://iss.localhost/' + screen + '-t'} alt={screen} />
         ))}
       </div>
     </div>
