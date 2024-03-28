@@ -32,24 +32,31 @@ pub fn init() -> TauriPlugin<Wry> {
 #[derive(Clone)]
 pub struct SettingPlugin {
     app: AppHandle,
+    path: PathBuf,
 }
 
 impl SettingPlugin {
     fn new(app: AppHandle) -> Self {
+        let path = path(&app);
         Self {
             app,
+            path,
         }
     }
 
     fn start(&self) {
-        with_setting(self.app.clone(), |store| {
+        let app1 = self.app.clone();
+        let stores = app1.state::<StoreCollection<Wry>>();
+        with_store(self.app.clone(), stores, &self.path, |store| {
             store.load().ok();
             store.save()
         }).expect("failed to start setting plugin")
     }
 
     fn stop(&self) {
-        with_setting(self.app.clone(), |store| {
+        let app1 = self.app.clone();
+        let stores = app1.state::<StoreCollection<Wry>>();
+        with_store(self.app.clone(), stores, &self.path, |store| {
             store.save()
         }).unwrap_or_else(|e| {
             eprintln!("failed to stop setting plugin: {}", e);
@@ -57,37 +64,49 @@ impl SettingPlugin {
     }
 
     pub fn set(&self, key: String, value: JsonValue) -> Result<(), Error> {
-        with_setting(self.app.clone(), |store| {
+        let app1 = self.app.clone();
+        let stores = app1.state::<StoreCollection<Wry>>();
+        with_store(self.app.clone(), stores, &self.path, |store| {
             store.insert(key, value)
         })
     }
 
     pub fn get(&self, key: String) -> Result<Option<JsonValue>, Error> {
-        with_setting(self.app.clone(), |store| {
+        let app1 = self.app.clone();
+        let stores = app1.state::<StoreCollection<Wry>>();
+        with_store(self.app.clone(), stores, &self.path, |store| {
             Ok(store.get(key).cloned())
         })
     }
 
     pub fn has(&self, key: String) -> Result<bool, Error> {
-        with_setting(self.app.clone(), |store| {
+        let app1 = self.app.clone();
+        let stores = app1.state::<StoreCollection<Wry>>();
+        with_store(self.app.clone(), stores, &self.path, |store| {
             Ok(store.has(key))
         })
     }
 
     pub fn delete(&self, key: String) -> Result<bool, Error> {
-        with_setting(self.app.clone(), |store| {
+        let app1 = self.app.clone();
+        let stores = app1.state::<StoreCollection<Wry>>();
+        with_store(self.app.clone(), stores, &self.path, |store| {
             store.delete(key)
         })
     }
 
     pub fn load(&self) -> Result<(), Error> {
-        with_setting(self.app.clone(), |store| {
+        let app1 = self.app.clone();
+        let stores = app1.state::<StoreCollection<Wry>>();
+        with_store(self.app.clone(), stores, &self.path, |store| {
             store.load()
         })
     }
 
     pub fn save(&self) -> Result<(), Error> {
-        with_setting(self.app.clone(), |store| {
+        let app1 = self.app.clone();
+        let stores = app1.state::<StoreCollection<Wry>>();
+        with_store(self.app.clone(), stores, &self.path, |store| {
             store.save()
         })
     }
@@ -97,9 +116,9 @@ pub fn with_setting<T, F: FnOnce(&mut Store<Wry>) -> Result<T, Error>>(
     app: AppHandle,
     f: F,
 ) -> Result<T, Error> {
+    let setting = app.state::<SettingPlugin>();
     let stores = app.state::<StoreCollection<Wry>>();
-    let path = path(&app);
-    with_store(app.clone(), stores, path, f)
+    with_store(app.clone(), stores, &setting.path, f)
 }
 
 fn path(app: &AppHandle) -> PathBuf {
