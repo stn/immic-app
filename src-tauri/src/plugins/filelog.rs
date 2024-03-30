@@ -2,38 +2,57 @@ use anyhow::Result;
 use log::{debug, error};
 use std::fmt;
 use std::sync::{Arc, Mutex};
+use tauri::{
+    plugin::{self, TauriPlugin}, AppHandle, Manager, State, Wry};
 use tokio::sync::mpsc;
 use watchexec::Watchexec;
+use watchexec_signals::Signal; 
 
-use crate::app::db;
-use crate::plugins::Plugin;
+use crate::plugins::db;
 
 const KIND: &str = "file";
 
+pub fn init() -> TauriPlugin<Wry> {
+    plugin::Builder::new("filelog")
+        .invoke_handler(tauri::generate_handler![
+            list_file_logs,
+            get_file_info,
+        ])
+        .setup(|app_handle| {
+            debug!("filelog plugin setup");
+            let filelog = FilelogPlugin::new(app_handle.clone());
+            app_handle.manage(filelog);
+            Ok(())
+        })
+        .build()
+}
+
+#[derive(Clone)]
 pub struct FilelogPlugin {
+    app: AppHandle,
     running: Arc<Mutex<bool>>,
 }
 
 impl FilelogPlugin {
-    pub fn new() -> Self {
+    pub fn new(app: AppHandle) -> Self {
         Self {
+            app,
             running: Arc::new(Mutex::new(false)),
         }
     }
-}
 
-impl Plugin for FilelogPlugin {
-    fn start(&mut self) {
+    pub fn start(&self) -> Result<()> {
         debug!("filelog");
 
         let (tx, mut rx) = mpsc::channel::<Vec<FileEventInfo>>(32);
 
+        let self_clone = self.clone();
         let _manager = tokio::spawn(async move {
             while let Some(infos) = rx.recv().await {
                 debug!("Received file_event_infos: {:?}", infos);
                 for info in infos.iter() {
                     debug!("filelog: {:?}", info);
-                    match info.insert().await {
+                    match self_clone.insert_info(info).await {
                         Ok(id) => {
                             debug!("filelog: inserted id: {:?}", id);
                         },
@@ -46,20 +65,23 @@ impl Plugin for FilelogPlugin {
         });
 
         *self.running.lock().unwrap() = true;
-        let running = Arc::clone(&self.running);
+        // let running = Arc::clone(&self.running);
+        let self_clone = self.clone();
         let wx = Watchexec::new(move |mut action| {
-            if !*running.lock().unwrap() {
+            if !*self_clone.running.lock().unwrap() {
+                action.quit();
+                return action;
+            }
+
+            // if Ctrl-C is received, quit
+            if action.signals().any(|sig| sig == Signal::Interrupt) {
+                self_clone.stop();
                 action.quit();
                 return action;
             }
 
             let infos: Vec<FileEventInfo> = action.events.iter().filter_map(event_to_file_event_info).collect();
             tx.try_send(infos).unwrap();
-
-            // // if Ctrl-C is received, quit
-            // if action.signals().any(|sig| sig == Signal::Interrupt) {
-            //     action.quit();
-            // }
 
             action
         }).unwrap();
@@ -70,24 +92,21 @@ impl Plugin for FilelogPlugin {
         tokio::spawn(async move {
             wx.main().await.unwrap().unwrap();
         });
+
+        Ok(())
     }
 
-    fn stop(&mut self) {
+    pub fn stop(&self) {
+        debug!("filelog stop");
         *self.running.lock().unwrap() = false;
     }
-}
 
-#[derive(Debug,PartialEq)]
-struct FileEventInfo {
-    kind: FileKind,
-    path: String,
-    file_type: FileType,
-}
-
-impl FileEventInfo {
-    async fn insert(&self) -> Result<i64> {
+    async fn insert_info(&self, info: &FileEventInfo) -> Result<i64> {
         let timestamp = chrono::Utc::now();
-        let event_id = db::insert_eventlog(timestamp, KIND).await?;
+
+        let db = self.app.state::<db::ImmicDb>();
+        let event_id = db.insert_eventlog(timestamp, KIND).await?;
+        let pool = db.pool().await.expect("db pool is not set");
 
         // Search file_info by path
         let result = sqlx::query_as::<_, (i64,)>(
@@ -97,9 +116,10 @@ impl FileEventInfo {
             WHERE path = ?
             "#
         )
-        .bind(&self.path)
-        .fetch_one(db::pool().unwrap())
+        .bind(&info.path)
+        .fetch_one(&pool)
         .await;
+
         let info_id = match result {
             Ok((id,)) => id,
             Err(_) => {
@@ -110,9 +130,9 @@ impl FileEventInfo {
                     VALUES (?, ?)
                     "#
                 )
-                .bind(&self.path)
-                .bind(&self.file_type.to_string())
-                .execute(db::pool().unwrap())
+                .bind(&info.path)
+                .bind(&info.file_type.to_string())
+                .execute(&pool)
                 .await?;
                 result.last_insert_rowid()
             }
@@ -126,15 +146,100 @@ impl FileEventInfo {
         )
         .bind(event_id)
         .bind(info_id)
-        .bind(&self.kind.to_string())
-        .execute(db::pool().unwrap())
+        .bind(&info.kind.to_string())
+        .execute(&pool)
         .await?;
 
         // Update event_log with log_id
         let log_id = result.last_insert_rowid();
-        db::update_eventlog_logid(event_id , log_id).await?;
+        db.update_eventlog_logid(event_id , log_id).await?;
+
         Ok(log_id)
     }
+
+    pub async fn list_file_logs(&self, date: &str) -> Result<Vec<FileLog>> {
+        debug!("list_filelogs: date: {}", date);
+
+        let db = self.app.state::<db::ImmicDb>();
+        let pool = db.pool().await.expect("db pool is not set");
+
+        let filelogs = sqlx::query_as::<_,
+            (i64, i64, String, String, i64,
+            i64, i64, Option<String>)
+        >(
+            r#"
+            SELECT
+            e.id, e.timestamp, e.date, e.kind, e.log_id,
+            f.id, f.indo_id, f.kind
+            FROM event_log e
+            INNER JOIN file_log f ON e.log_id = f.id
+            WHERE e.kind = ? AND e.date = ?
+            ORDER BY e.timestamp
+            "#
+        )
+        .bind(KIND)
+        .bind(date)
+        .fetch_all(&pool)
+        .await
+        .unwrap_or(Vec::new())
+        .iter()
+        .map(|row| {
+            let (event_id, timestamp, date, _kind, _log_id,
+                id, info_id, kind,
+            ) = row;
+            FileLog {
+                id: *id,
+                event_id: *event_id,
+                timestamp: *timestamp,
+                date: date.clone(),
+                info_id: *info_id,
+                kind: kind.clone(),
+            }
+        })
+        .collect();
+
+        debug!("list_filelogs: filelogs: {:?}", filelogs);
+        
+        Ok(filelogs)
+    }
+
+    pub async fn get_file_info(&self, file_id: i64) -> Result<FileInfo> {
+        debug!("get_file_info: file_id={}", file_id);
+
+        let db = self.app.state::<db::ImmicDb>();
+        let pool = db.pool().await.expect("db pool is not set");
+
+        let result = sqlx::query_as::<_, (i64, String, Option<String>)>(
+            r#"
+            SELECT id, path, file_type
+            FROM file_info
+            WHERE id = ?
+            "#
+        )
+        .bind(file_id)
+        .fetch_one(&pool)
+        .await;
+
+        match result {
+            Ok((id, path, file_type)) => {
+                Ok(FileInfo {
+                    id: id,
+                    path: path,
+                    file_type: file_type,
+                })
+            },
+            Err(_) => {
+                Err(anyhow::anyhow!("Not found"))
+            }
+        }
+    }
+}
+
+#[derive(Debug,PartialEq)]
+struct FileEventInfo {
+    kind: FileKind,
+    path: String,
+    file_type: FileType,
 }
 
 #[derive(Debug,PartialEq)]
@@ -238,67 +343,11 @@ pub struct FileInfo {
 }
 
 #[tauri::command]
-pub async fn list_file_logs(date: String) -> Result<Vec<FileLog>, String> {
-    debug!("list_filelogs: date: {}", date);
-    let filelogs = sqlx::query_as::<_,
-      (i64, i64, String, String, i64,
-       i64, i64, Option<String>)
-    >(
-        r#"
-        SELECT
-          e.id, e.timestamp, e.date, e.kind, e.log_id,
-          f.id, f.indo_id, f.kind
-        FROM event_log e
-        INNER JOIN file_log f ON e.log_id = f.id
-        WHERE e.kind = ? AND e.date = ?
-        ORDER BY e.timestamp
-        "#
-    )
-    .bind(KIND)
-    .bind(date)
-    .fetch_all(db::pool().unwrap())
-    .await
-    .unwrap_or(Vec::new())
-    .iter()
-    .map(|row| {
-        let (event_id, timestamp, date, _kind, _log_id,
-             id, info_id, kind,
-        ) = row;
-        FileLog {
-            id: *id,
-            event_id: *event_id,
-            timestamp: *timestamp,
-            date: date.clone(),
-            info_id: *info_id,
-            kind: kind.clone(),
-        }
-    })
-    .collect();
-    debug!("list_filelogs: filelogs: {:?}", filelogs);
-    Ok(filelogs)
+pub async fn list_file_logs(file_log: State<'_, FilelogPlugin>, date: String) -> Result<Vec<FileLog>, String> {
+    file_log.list_file_logs(&date).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn get_file_info(file_id: i64) -> Result<FileInfo, String> {
-    debug!("get_file_info: file_id={}", file_id);
-
-    sqlx::query_as::<_, (i64, String, Option<String>)>(
-        r#"
-        SELECT id, path, file_type
-        FROM file_info
-        WHERE id = ?
-        "#
-    )
-    .bind(file_id)
-    .fetch_one(db::pool().unwrap())
-    .await
-    .map_or(Err("Not found".to_string()), |row| {
-        let (id, path, file_type) = row;
-        Ok(FileInfo {
-            id: id,
-            path: path,
-            file_type: file_type,
-        })
-    })
+pub async fn get_file_info(file_log: State<'_, FilelogPlugin>, file_id: i64) -> Result<FileInfo, String> {
+    file_log.get_file_info(file_id).await.map_err(|e| e.to_string())
 }
-

@@ -1,38 +1,65 @@
 use active_win_pos_rs::get_active_window;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use log::debug;
 use std::sync::{Arc, Mutex};
 use sqlx;
+use tauri::{
+    plugin::{self, TauriPlugin},
+    AppHandle, Manager, State, Wry,
+};
 
-use crate::app::db;
-use crate::plugins::Plugin;
+use crate::plugins::db::ImmicDb;
 
 const KIND: &str = "application";
 
+pub fn init() -> TauriPlugin<Wry> {
+    plugin::Builder::new("application")
+        .invoke_handler(tauri::generate_handler![
+            list_application_logs,
+            get_application_info,
+        ])
+        .setup(|app_handle| {
+            debug!("application plugin setup");
+            let application = ApplicationPlugin::new(app_handle);
+            app_handle.manage(application);
+            Ok(())
+        })
+        .build()
+}
+
+#[derive(Clone)]
 pub struct ApplicationPlugin {
+    app: AppHandle,
     running: Arc<Mutex<bool>>,
 }
 
 impl ApplicationPlugin {
-    pub fn new() -> ApplicationPlugin {
-        ApplicationPlugin {
+    fn new(app: &AppHandle) -> Self {
+        Self {
+            app: app.clone(),
             running: Arc::new(Mutex::new(false)),
         }
     }
-}
 
-impl Plugin for ApplicationPlugin {
-    fn start(&mut self) {
-        *self.running.lock().unwrap() = true;
-        let running = Arc::clone(&self.running);
+    pub async fn start(&self) -> Result<()> {
+        debug!("ApplicationPlugin start");
+
+        // Check pool
+        let db = self.app.state::<ImmicDb>();
+        db.pool().await.unwrap();
+
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+
+        *self.running.lock().unwrap() = true;
+        // let running = Arc::clone(&self.running);
         // let app = self;
+        let self_clone = self.clone();
         tokio::spawn(async move {
             let mut last_win_info = None;
             let mut last_id = -1;
             let mut last_info_id = -1;
             loop {
-                if !*running.lock().unwrap() {
+                if !*self_clone.running.lock().unwrap() {
                     break;
                 }
                 interval.tick().await;
@@ -42,7 +69,7 @@ impl Plugin for ApplicationPlugin {
                 // check if the last info is the same as the current info
                 if win_info == last_win_info {
                     debug!("check_application: same as last info");
-                    if let Err(e) = insert_ref(last_id, last_info_id).await {
+                    if let Err(e) = self_clone.insert_win_info_ref(last_id, last_info_id).await {
                         debug!("check_application: Error on inserting ref: {:?}", e);
                     }
                     continue;
@@ -50,7 +77,7 @@ impl Plugin for ApplicationPlugin {
 
                 if let Some(win_info) = win_info {
                     debug!("check_application: {:?}", win_info);
-                    let ids = win_info.insert().await;
+                    let ids = self_clone.insert_win_info(&win_info).await;
                     match ids {
                         Ok((id, info_id)) => {
                             last_win_info = Some(win_info);
@@ -64,11 +91,194 @@ impl Plugin for ApplicationPlugin {
                 }
             }
         });
+
+        Ok(())
     }
 
-    fn stop(&mut self) {
+    pub fn stop(&self) {
         *self.running.lock().unwrap() = false;
     }
+
+    async fn insert_win_info(&self, win_info: &WinInfo) -> Result<(i64, i64)> {
+        let timestamp = chrono::Utc::now();
+
+        // Insert event_log
+        let db = self.app.state::<ImmicDb>();
+        let event_id = db.insert_eventlog(timestamp, KIND).await?;
+
+        // Search application_info by path
+        let pool = db.pool().await.unwrap();
+        let result = sqlx::query_as::<_, (i64,)>(
+            r#"
+            SELECT id
+            FROM application_info
+            WHERE path = ?
+            "#
+        )
+        .bind(&win_info.path)
+        .fetch_one(&pool)
+        .await;
+
+        let info_id = match result {
+            Ok((id,)) => id,
+            Err(_) => {
+                // Insert application_info for new path
+                let result = sqlx::query(
+                    r#"
+                    INSERT INTO application_info (path, name)
+                    VALUES (?, ?)
+                    "#
+                )
+                .bind(&win_info.path)
+                .bind(&win_info.name)
+                .execute(&pool)
+                .await?;
+                result.last_insert_rowid()
+            }
+        };
+
+        let result = sqlx::query(
+            r#"
+            INSERT INTO application_log (event_id, info_id, process_id, title, x, y, width, height)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            "#
+        )
+        .bind(event_id)
+        .bind(info_id)
+        .bind(win_info.process_id)
+        .bind(&win_info.title)
+        .bind(win_info.x)
+        .bind(win_info.y)
+        .bind(win_info.width)
+        .bind(win_info.height)
+        .execute(&pool)
+        .await?;
+
+        // Update event_log with log_id
+        let log_id = result.last_insert_rowid();
+        db.update_eventlog_logid(event_id, log_id).await?;
+
+        Ok((log_id, info_id))
+    }
+
+    async fn insert_win_info_ref(&self, ref_id: i64, info_id: i64) -> Result<i64> {
+        let timestamp = chrono::Utc::now();
+
+        // Insert event_log
+        let db = self.app.state::<ImmicDb>();
+        let event_id = db.insert_eventlog(timestamp, KIND).await?;
+
+        let pool = db.pool().await.unwrap();
+        let result = sqlx::query(
+            r#"
+            INSERT INTO application_log (event_id, info_id, ref_id)
+            VALUES (?, ?, ?)
+            "#
+        )
+        .bind(event_id)
+        .bind(info_id)
+        .bind(ref_id)
+        .execute(&pool)
+        .await?;
+
+        // Update event_log with log_id
+        let log_id = result.last_insert_rowid();
+        db.update_eventlog_logid(event_id , log_id).await?;
+
+        Ok(log_id)
+    }
+
+    pub async fn list_application_logs(&self, date: &str) -> Result<Vec<ApplicationLog>> {
+        debug!("list_application_logs: date: {}", date);
+
+        let db = self.app.state::<ImmicDb>();
+        let pool = db.pool().await.unwrap();
+        let application_logs = sqlx::query_as::<_,
+        (i64, i64, String, String, i64,
+        i64, i64, Option<i64>, Option<String>, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>)>(
+            r#"
+            SELECT
+            e.id, e.timestamp, e.date, e.kind, e.log_id,
+            a.id, a.info_id, a.process_id, a.title, a.x, a.y, a.width, a.height, a.ref_id
+            FROM event_log e
+            INNER JOIN application_log a ON e.log_id = a.id
+            WHERE e.kind = ? AND e.date = ?
+            ORDER BY e.timestamp
+            "#
+        )
+        .bind(KIND)
+        .bind(date)
+        .fetch_all(&pool)
+        .await
+        .unwrap_or(Vec::new())
+        .iter()
+        .map(|row| {
+            let (event_id, timestamp, date, _kind, _log_id,
+                id, info_id, process_id, title, x, y, width, height, ref_id
+                ) = row;
+            ApplicationLog {
+                id: *id,
+                event_id: *event_id,
+                timestamp: *timestamp,
+                date: date.clone(),
+                info_id: *info_id,
+                process_id: *process_id,
+                title: title.clone(),
+                x: *x,
+                y: *y,
+                width: *width,
+                height: *height,
+                ref_id: *ref_id,
+            }
+        })
+        .collect();
+
+        debug!("list_applications: application_logs: {:?}", application_logs);
+
+        Ok(application_logs)
+    }
+
+    pub async fn get_application_info(&self, app_id: i64) -> Result<ApplicationInfo> {
+        debug!("get_application_info: app_id={}", app_id);
+
+        let db = self.app.state::<ImmicDb>();
+        let pool = db.pool().await.unwrap();
+        let result = sqlx::query_as::<_, (i64, String, Option<String>)>(
+            r#"
+            SELECT id, path, name
+            FROM application_info
+            WHERE id = ?
+            "#
+        )
+        .bind(app_id)
+        .fetch_one(&pool)
+        .await;
+        
+        match result {
+            Ok((id, path, name)) => {
+                Ok(ApplicationInfo {
+                    id: id,
+                    path: path,
+                    name: name,
+                })
+            },
+            Err(_) => {
+                Err(anyhow!("Not found"))
+            }
+        }
+    }
+}
+
+#[derive(Debug,PartialEq)]
+struct WinInfo {
+    process_id: i64,
+    path: String,
+    name: String,
+    title: String,
+    x: i64,
+    y: i64,
+    width: i64,
+    height: i64,
 }
 
 async fn check_application() -> Option<WinInfo> {
@@ -92,98 +302,6 @@ async fn check_application() -> Option<WinInfo> {
             None
         }
     }
-}
-
-#[derive(Debug,PartialEq)]
-struct WinInfo {
-    process_id: i64,
-    path: String,
-    name: String,
-    title: String,
-    x: i64,
-    y: i64,
-    width: i64,
-    height: i64,
-}
-
-impl WinInfo {
-    async fn insert(&self) -> Result<(i64, i64)> {
-        let timestamp = chrono::Utc::now();
-        let event_id = db::insert_eventlog(timestamp, KIND).await?;
-
-        // Search application_info by path
-        let result = sqlx::query_as::<_, (i64,)>(
-            r#"
-            SELECT id
-            FROM application_info
-            WHERE path = ?
-            "#
-        )
-        .bind(&self.path)
-        .fetch_one(db::pool().unwrap())
-        .await;
-        let info_id = match result {
-            Ok((id,)) => id,
-            Err(_) => {
-                // Insert application_info for new path
-                let result = sqlx::query(
-                    r#"
-                    INSERT INTO application_info (path, name)
-                    VALUES (?, ?)
-                    "#
-                )
-                .bind(&self.path)
-                .bind(&self.name)
-                .execute(db::pool().unwrap())
-                .await?;
-                result.last_insert_rowid()
-            }
-        };
-
-        let result = sqlx::query(
-            r#"
-            INSERT INTO application_log (event_id, info_id, process_id, title, x, y, width, height)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            "#
-        )
-        .bind(event_id)
-        .bind(info_id)
-        .bind(self.process_id)
-        .bind(&self.title)
-        .bind(self.x)
-        .bind(self.y)
-        .bind(self.width)
-        .bind(self.height)
-        .execute(db::pool().unwrap())
-        .await?;
-
-        // Update event_log with log_id
-        let log_id = result.last_insert_rowid();
-        db::update_eventlog_logid(event_id, log_id).await?;
-        Ok((log_id, info_id))
-    }
-}
-
-async fn insert_ref(ref_id: i64, info_id: i64) -> Result<i64> {
-    let timestamp = chrono::Utc::now();
-    let event_id = db::insert_eventlog(timestamp, KIND).await?;
-
-    let result = sqlx::query(
-        r#"
-        INSERT INTO application_log (event_id, info_id, ref_id)
-        VALUES (?, ?, ?)
-        "#
-    )
-    .bind(event_id)
-    .bind(info_id)
-    .bind(ref_id)
-    .execute(db::pool().unwrap())
-    .await?;
-
-    // Update event_log with log_id
-    let log_id = result.last_insert_rowid();
-    db::update_eventlog_logid(event_id , log_id).await?;
-    Ok(log_id)
 }
 
 
@@ -213,71 +331,11 @@ pub struct ApplicationInfo {
 }
 
 #[tauri::command]
-pub async fn list_application_logs(date: String) -> Result<Vec<ApplicationLog>, String> {
-    debug!("list_application_logs: date: {}", date);
-    let application_logs = sqlx::query_as::<_,
-      (i64, i64, String, String, i64,
-       i64, i64, Option<i64>, Option<String>, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>)>(
-        r#"
-        SELECT
-          e.id, e.timestamp, e.date, e.kind, e.log_id,
-          a.id, a.info_id, a.process_id, a.title, a.x, a.y, a.width, a.height, a.ref_id
-        FROM event_log e
-        INNER JOIN application_log a ON e.log_id = a.id
-        WHERE e.kind = ? AND e.date = ?
-        ORDER BY e.timestamp
-        "#
-    )
-    .bind(KIND)
-    .bind(date)
-    .fetch_all(db::pool().unwrap())
-    .await
-    .unwrap_or(Vec::new())
-    .iter()
-    .map(|row| {
-        let (event_id, timestamp, date, _kind, _log_id,
-             id, info_id, process_id, title, x, y, width, height, ref_id
-            ) = row;
-        ApplicationLog {
-            id: *id,
-            event_id: *event_id,
-            timestamp: *timestamp,
-            date: date.clone(),
-            info_id: *info_id,
-            process_id: *process_id,
-            title: title.clone(),
-            x: *x,
-            y: *y,
-            width: *width,
-            height: *height,
-            ref_id: *ref_id,
-        }
-    })
-    .collect();
-    debug!("list_applications: application_logs: {:?}", application_logs);
-    Ok(application_logs)
+pub async fn list_application_logs(application: State<'_, ApplicationPlugin>, date: String) -> Result<Vec<ApplicationLog>, String> {
+    application.list_application_logs(&date).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn get_application_info(app_id: i64) -> Result<ApplicationInfo, String> {
-    debug!("get_application_info: app_id={}", app_id);
-
-    sqlx::query_as::<_, (i64, String, Option<String>)>(
-        r#"
-        SELECT id, path, name
-        FROM application_info
-        WHERE id = ?
-        "#
-    )
-    .bind(app_id)
-    .fetch_one(db::pool().unwrap())
-    .await
-    .map_or(Err("Not found".to_string()), |row| {
-        let (id, path, name) = row;
-        Ok(ApplicationInfo {
-            id: id,
-            path: path,
-            name: name,
-        })
-    })
+pub async fn get_application_info(application: State<'_, ApplicationPlugin>, app_id: i64) -> Result<ApplicationInfo, String> {
+    application.get_application_info(app_id).await.map_err(|e| e.to_string())
 }

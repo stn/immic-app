@@ -27,23 +27,23 @@ function App() {
   const [screens, setScreens] = useState<string[]>([]);
 
   async function listDates() {
-    setDates(await invoke("list_eventlog_dates"));
+    setDates(await invoke("plugin:immicdb|list_eventlog_dates"));
   }
 
   async function listApplicationLogs(date: string) {
-    setApplications(await invoke("list_application_logs", { date }));
+    setApplications(await invoke("plugin:application|list_application_logs", { date }));
   }
 
   async function listBrowserLogs(date: string) {
-    setBrowsers(await invoke("list_browser_logs", { date }));
+    setBrowsers(await invoke("plugin:browser|list_browser_logs", { date }));
   }
 
   async function listFileLogs(date: string) {
-    setFilelogs(await invoke("list_file_logs", { date }));
+    setFilelogs(await invoke("plugin:filelog|list_file_logs", { date }));
   }
 
   async function listScreenshots(date: string) {
-    setScreens(await invoke("list_screenshots", { date }));
+    setScreens(await invoke("plugin:screenshot|list_screenshots", { date }));
   }
 
   useEffect(() => {

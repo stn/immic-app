@@ -1,21 +1,18 @@
-use std::sync::Mutex;
-
 use tauri::{
     AppHandle,
     CustomMenuItem,
     Manager,
-    State,
     SystemTray,
     SystemTrayEvent,
     SystemTrayMenu,
     SystemTrayMenuItem,
 };
 
-use crate::app::db;
-use crate::plugins::Plugin;
+use crate::plugins::db::ImmicDb;
+use crate::plugins::setting::SettingPlugin;
+use crate::plugins::screenshot::ScreenshotPlugin;
 use crate::plugins::application::ApplicationPlugin;
 use crate::plugins::filelog::FilelogPlugin;
-use crate::plugins::screen::ScreenshotPlugin;
 
 pub fn generate_system_tray() -> SystemTray {
     let quit = CustomMenuItem::new("quit".to_string(), "Quit");
@@ -52,19 +49,26 @@ pub fn system_tray_event(app: &AppHandle, event: SystemTrayEvent) {
 
 #[tauri::command]
 pub fn quit_app(app: AppHandle) {
-    // Plugins
-    let application: State<Mutex<ApplicationPlugin>> = app.state();
-    application.lock().unwrap().stop();
-    let filelog: State<Mutex<FilelogPlugin>> = app.state();
-    filelog.lock().unwrap().stop();
-    let screenshot: State<Mutex<ScreenshotPlugin>> = app.state();
-    screenshot.lock().unwrap().stop();
     tokio::spawn(async move {
-        // DB
-        db::close().await;
+        // Filelog
+        let filelog = app.state::<FilelogPlugin>();
+        filelog.stop();
 
-        // https://github.com/tauri-apps/tauri/discussions/3273
-        tauri::api::process::kill_children();
+        // Screenshot
+        let screenshot = app.state::<ScreenshotPlugin>();
+        screenshot.stop();
+
+        // Application
+        let application = app.state::<ApplicationPlugin>();
+        application.stop();
+
+        // DB
+        let db = app.state::<ImmicDb>();
+        db.stop().await.ok();
+
+        // Setting
+        let setting = app.state::<SettingPlugin>();
+        setting.stop();
 
         app.exit(0);
     });

@@ -31,6 +31,7 @@ watchexec = "3.0.1"
 actix-cors = "0.7.0"
 env_logger = "0.11.3"
 watchexec-events = "2.0.1"
+watchexec-signals = "2.1.0"
 dotenv = "0.15.0"
 log = "0.4.21"
 
