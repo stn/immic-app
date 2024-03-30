@@ -4,19 +4,9 @@
 mod app;
 mod plugins;
 
-use std::sync::Mutex;
-use app::setting;
 use dotenv::dotenv;
-use tauri::{Manager, State};
-use log::error;
-
-use app::db;
-use app::tray;
-use app::server;
-use plugins::Plugin;
-use plugins::application::ApplicationPlugin;
-use plugins::filelog::FilelogPlugin;
-use plugins::screen::ScreenshotPlugin;
+use tauri::Manager;
+use log::{error,debug};
 
 #[tokio::main]
 async fn main() {
@@ -33,67 +23,91 @@ async fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::default().build())
+        .plugin(plugins::setting::init())
+        .plugin(plugins::db::init())
+        .plugin(plugins::screenshot::init())
+        .plugin(plugins::application::init())
+        .plugin(plugins::filelog::init())
+        .plugin(plugins::browser::init())
         .invoke_handler(tauri::generate_handler![
-            app::setting::setting_set,
-            app::setting::setting_get,
-            app::setting::setting_has,
-            app::setting::setting_delete,
-            app::setting::setting_load,
-            app::setting::setting_save,
             app::tray::quit_app,
             app::tray::show_main,
             app::tray::show_preferences,
-            db::list_eventlog_dates,
-            db::list_eventlog_on,
-            plugins::application::list_application_logs,
-            plugins::application::get_application_info,
-            plugins::browser::list_browser_logs,
-            plugins::browser::get_browser_info,
-            plugins::filelog::list_file_logs,
-            plugins::filelog::get_file_info,
-            plugins::screen::list_screenshots,
         ])
-        .register_uri_scheme_protocol(
-            "iss",
-             move |app, request| {
-                plugins::screen::handle_iss_protocol(&app, &request)
-            }
-        )
-        .manage(Mutex::new(ScreenshotPlugin::new()))
-        .manage(Mutex::new(ApplicationPlugin::new()))
-        .manage(Mutex::new(FilelogPlugin::new()))
         .setup(|app| {
+            debug!("setup");
+
             let app = app.handle();
 
-            // Initialize settings
-            setting::init(app.clone())?;
+            // // Setting plugin
+            let setting = app.state::<plugins::setting::SettingPlugin>();
+            setting.start().expect("Failed to start setting plugin");
+            // setting::init(app.clone())?;
 
             tokio::spawn(async move {
-                if let Err(e) = db::init(&app).await {
-                    error!("DB error: {}", e);
+                // DB plugin
+                let db = app.state::<plugins::db::ImmicDb>();
+                if let Err(e) = db.start() {
+                    debug!("DB error: {}", e);
+                    return;
+                }
+                if let Err(e) = db.migrate().await {
+                    debug!("DB migration error: {}", e);
                     return;
                 }
 
-                let application: State<Mutex<ApplicationPlugin>> = app.state();
-                application.lock().unwrap().start();
+                // Screenshot plugin
+                let screen = app.state::<plugins::screenshot::ScreenshotPlugin>();
+                screen.start().unwrap_or_else(|e| {
+                    error!("Screenshot start error: {}", e);
+                });
 
-                let filelog: State<Mutex<FilelogPlugin>> = app.state();
-                filelog.lock().unwrap().start();
+                // Application plugin
+                let application = app.state::<plugins::application::ApplicationPlugin>();
+                application.start().await.unwrap_or_else(|e| {
+                    error!("Application start error: {}", e);
+                });
 
-                let screenshot: State<Mutex<ScreenshotPlugin>> = app.state();
-                screenshot.lock().unwrap().start();
+                // FileLog plugin
+                let filelog = app.state::<plugins::filelog::FilelogPlugin>();
+                filelog.start().unwrap_or_else(|e| {
+                    error!("Filelog start error: {}", e);
+                });
 
-                // server::init will block the thread
+                // Browser plugin
                 std::thread::spawn(move || {
-                    server::init(app).unwrap_or_else(|e| {
-                        error!("Server error: {}", e);
+                    plugins::browser::init_server(app).unwrap_or_else(|e| {
+                        error!("Browser server error: {}", e);
                     });
                 });
             });
+
+            // tokio::spawn(async move {
+            //     if let Err(e) = db::init(&app).await {
+            //         error!("DB error: {}", e);
+            //         return;
+            //     }
+
+            //     let application: State<Mutex<ApplicationPlugin>> = app.state();
+            //     application.lock().unwrap().start();
+
+            //     let filelog: State<Mutex<FilelogPlugin>> = app.state();
+            //     filelog.lock().unwrap().start();
+
+            //     // let screenshot: State<Mutex<ScreenshotPlugin>> = app.state();
+            //     // screenshot.lock().unwrap().start();
+
+            //     // server::init will block the thread
+            //     std::thread::spawn(move || {
+            //         server::init(app).unwrap_or_else(|e| {
+            //             error!("Server error: {}", e);
+            //         });
+            //     });
+            // });
             Ok(())
         })
-        .system_tray(tray::generate_system_tray())
-        .on_system_tray_event(tray::system_tray_event)
+        .system_tray(app::tray::generate_system_tray())
+        .on_system_tray_event(app::tray::system_tray_event)
         .on_window_event(|event| match event.event() {
             tauri::WindowEvent::CloseRequested { api, .. } => {
                 event.window().hide().unwrap();
@@ -105,10 +119,23 @@ async fn main() {
         .expect("error while running tauri application");
         // .build(tauri::generate_context!())
         // .expect("error while running tauri application")
-        // .run(|_app_handle, event| match event {
-        //     tauri::RunEvent::ExitRequested { api, .. } => {
-        //         api.prevent_exit();
+        // .run(|app, event|
+        //     match event {
+        //         tauri::RunEvent::ExitRequested { api, .. } => {
+        //             debug!("exit requested");
+        //             api.prevent_exit();
+
+        //             let app = app.clone();
+        //             tokio::spawn(async move {
+        //                 let db = app.state::<plugins::db::ImmicDb>();
+        //                 db.stop().await;
+        //                 debug!("db stopped");
+
+        //                 debug!("exit");
+        //                 app.exit(0);
+        //             });
+        //         },
+        //         _ => {}
         //     }
-        //     _ => {}
-        // });
+        // );
 }

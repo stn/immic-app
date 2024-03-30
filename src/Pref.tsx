@@ -2,19 +2,19 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 
 async function settingSet(key: string, value: any) {
-  return await invoke("setting_set", { key, value });
+  return await invoke("plugin:setting|set", { key, value });
 }
 
 async function settingGet<T>(key: string) {
-  return await invoke("setting_get", { key }) as T;
+  return await invoke("plugin:setting|get", { key }) as T;
 }
 
 async function settingLoad() {
-  return await invoke("setting_load");
+  return await invoke("plugin:setting|load");
 }
 
 async function settingSave() {
-  return await invoke("setting_save");
+  return await invoke("plugin:setting|save");
 }
 
 function Pref() {
