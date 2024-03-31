@@ -12,9 +12,14 @@ use tauri::{
     AppHandle, Manager, State, Wry,
 };
 
-use crate::plugins::db::ImmicDb;
+use crate::plugins::{
+    db::ImmicDb,
+    setting::SettingPlugin,
+};
 
 const KIND: &str = "browser";
+const SERVER_PORT_SETTING: &str = "server-port";
+const DEFAULT_SERVER_PORT: u16 = 3294;
 
 pub fn init() -> TauriPlugin<Wry> {
     plugin::Builder::new("browser")
@@ -245,8 +250,9 @@ pub async fn get_browser_info(browser: State<'_, BrowserPlugin>, browser_id: i64
 // BroserPlugin::startにできないか？
 #[actix_web::main]
 pub async fn init_server(app: AppHandle) -> std::io::Result<()> {
-    let data = web::Data::new(app.clone());
+    let server_port = server_port(&app);
 
+    let data = web::Data::new(app.clone());
     HttpServer::new(move || {
         let cors = Cors::default()
             .allowed_origin_fn(|_origin, _req_head| {
@@ -264,7 +270,36 @@ pub async fn init_server(app: AppHandle) -> std::io::Result<()> {
             .wrap(cors)
             .service(browserlog)
     })
-    .bind(("127.0.0.1", 3294))?
+    .bind(("127.0.0.1", server_port))?
     .run()
     .await
+}
+
+fn server_port(app: &AppHandle) -> u16 {
+    // debug!("db_path");
+    let setting = app.state::<SettingPlugin>();
+    let server_port = match setting.get(SERVER_PORT_SETTING) {
+        Ok(Some(s)) => {
+            match s.as_str() {
+                Some(s) => {
+                    match s.parse::<u16>() {
+                        Ok(port) => port,
+                        Err(e) => {
+                            error!("Invalid port: {}", e);
+                            DEFAULT_SERVER_PORT
+                        }
+                    }
+                },
+                None => {
+                    error!("Invalid port: {:?}", s);
+                    DEFAULT_SERVER_PORT
+                }
+            }
+        },
+        _ => DEFAULT_SERVER_PORT,
+    };
+
+    debug!("server_port: {}", server_port);
+
+    server_port
 }
