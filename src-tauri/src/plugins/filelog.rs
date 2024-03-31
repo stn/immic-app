@@ -1,16 +1,24 @@
-use anyhow::Result;
-use log::{debug, error};
-use std::fmt;
-use std::sync::{Arc, Mutex};
+use anyhow::{anyhow, Result};
+use log::{debug, error, info};
+use std::{
+    fmt,
+    sync::{ Arc, Mutex},
+};
 use tauri::{
-    plugin::{self, TauriPlugin}, AppHandle, Manager, State, Wry};
+    plugin::{self, TauriPlugin},
+    AppHandle, Manager, State, Wry,
+};
 use tokio::sync::mpsc;
 use watchexec::Watchexec;
 use watchexec_signals::Signal; 
 
-use crate::plugins::db;
+use crate::plugins::{
+    db,
+    setting::SettingPlugin,
+};
 
 const KIND: &str = "file";
+const WATCH_PATHSEST_SETTING: &str = "watch-pathset";
 
 pub fn init() -> TauriPlugin<Wry> {
     plugin::Builder::new("filelog")
@@ -42,9 +50,15 @@ impl FilelogPlugin {
     }
 
     pub fn start(&self) -> Result<()> {
-        debug!("filelog");
+        info!("starting filelog");
+        
+        let watch_pathset = self.watch_pathset()?;
+        if watch_pathset.is_empty() {
+            debug!("watch_pathset is empty");
+            return Ok(());
+        }
 
-        let (tx, mut rx) = mpsc::channel::<Vec<FileEventInfo>>(32);
+        let (tx, mut rx) = mpsc::channel::<Vec<FileEventInfo>>(64);
 
         let self_clone = self.clone();
         let _manager = tokio::spawn(async move {
@@ -87,7 +101,7 @@ impl FilelogPlugin {
         }).unwrap();
 
         // watch the current directory
-        wx.config.pathset(["f:\\"]);
+        wx.config.pathset(watch_pathset);
 
         tokio::spawn(async move {
             wx.main().await.unwrap().unwrap();
@@ -99,6 +113,20 @@ impl FilelogPlugin {
     pub fn stop(&self) {
         debug!("filelog stop");
         *self.running.lock().unwrap() = false;
+    }
+
+    fn watch_pathset(&self) -> Result<Vec<String>> {
+        // debug!("db_path");
+        let setting = self.app.state::<SettingPlugin>();
+        let watch_pathset = setting.get(WATCH_PATHSEST_SETTING)?
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .map(|s| s.split(',').map(|s| s.to_string()).collect::<Vec<String>>());
+        if watch_pathset.is_none() {
+            return Err(anyhow!("{} is not set", WATCH_PATHSEST_SETTING));
+        }
+        debug!("watch_pathset: {:?}", watch_pathset);
+
+        Ok(watch_pathset.unwrap())
     }
 
     async fn insert_info(&self, info: &FileEventInfo) -> Result<i64> {
