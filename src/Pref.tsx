@@ -17,6 +17,10 @@ async function settingSave() {
   return await invoke("plugin:setting|save");
 }
 
+async function restartApp() {
+  return await invoke("restart_app");
+}
+
 function Pref() {
   const [dataDir, setDataDir] = useState("");
   const [serverPort, setServerPort] = useState("");
@@ -25,6 +29,7 @@ function Pref() {
     await settingSet("data-dir", dataDir);
     await settingSet("server-port", serverPort);
     await settingSave();
+    await restartApp();
   }
 
   useEffect(() => {
