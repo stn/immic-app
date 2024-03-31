@@ -8,11 +8,13 @@ use tauri::{
     SystemTrayMenuItem,
 };
 
-use crate::plugins::db::ImmicDb;
-use crate::plugins::setting::SettingPlugin;
-use crate::plugins::screenshot::ScreenshotPlugin;
-use crate::plugins::application::ApplicationPlugin;
-use crate::plugins::filelog::FilelogPlugin;
+use crate::plugins::{
+    db::ImmicDb,
+    setting::SettingPlugin,
+    screenshot::ScreenshotPlugin,
+    application::ApplicationPlugin,
+    filelog::FilelogPlugin,
+};
 
 pub fn generate_system_tray() -> SystemTray {
     let quit = CustomMenuItem::new("quit".to_string(), "Quit");

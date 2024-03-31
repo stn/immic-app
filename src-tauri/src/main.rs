@@ -1,12 +1,14 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod app;
-mod plugins;
-
 use dotenv::dotenv;
 use tauri::Manager;
 use log::{error,info,warn};
+
+use immic_app::{
+    app,
+    plugins,
+};
 
 #[tokio::main]
 async fn main() {
@@ -83,28 +85,7 @@ async fn main() {
 
                 info!("All plugins started");
             });
-            // tokio::spawn(async move {
-            //     if let Err(e) = db::init(&app).await {
-            //         error!("DB error: {}", e);
-            //         return;
-            //     }
 
-            //     let application: State<Mutex<ApplicationPlugin>> = app.state();
-            //     application.lock().unwrap().start();
-
-            //     let filelog: State<Mutex<FilelogPlugin>> = app.state();
-            //     filelog.lock().unwrap().start();
-
-            //     // let screenshot: State<Mutex<ScreenshotPlugin>> = app.state();
-            //     // screenshot.lock().unwrap().start();
-
-            //     // server::init will block the thread
-            //     std::thread::spawn(move || {
-            //         server::init(app).unwrap_or_else(|e| {
-            //             error!("Server error: {}", e);
-            //         });
-            //     });
-            // });
             Ok(())
         })
         .system_tray(app::tray::generate_system_tray())

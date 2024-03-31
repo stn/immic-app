@@ -14,8 +14,10 @@ use tauri::{
     http, plugin::{self, TauriPlugin}, AppHandle, Manager, State, Wry};
 use xcap::Monitor;
 
-use crate::plugins::db;
-use crate::plugins::setting::SettingPlugin;
+use crate::plugins::{
+    db,
+    setting::SettingPlugin,
+};
 
 const KIND: &str = "screenshot";
 
