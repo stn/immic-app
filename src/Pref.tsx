@@ -17,19 +17,21 @@ async function settingSave() {
   return await invoke("plugin:setting|save");
 }
 
-async function restartApp() {
-  return await invoke("restart_app");
+async function quitApp() {
+  return await invoke("quit_app");
 }
 
 function Pref() {
   const [dataDir, setDataDir] = useState("");
   const [serverPort, setServerPort] = useState("");
+  const [watchPathset, setWatchPathset] = useState<string>("");
 
   async function storePreferences() {
     await settingSet("data-dir", dataDir);
     await settingSet("server-port", serverPort);
+    await settingSet("watch-pathset", watchPathset);
     await settingSave();
-    await restartApp();
+    await quitApp();
   }
 
   useEffect(() => {
@@ -38,9 +40,11 @@ function Pref() {
       await settingLoad();
       const dataDir = await settingGet<string>("data-dir") || "";
       const serverPort = await settingGet<string>("server-port") || "3294";
+      const watchPathset = await settingGet<string>("watch-pathset") || "";
       if (isMounted) {
         setDataDir(dataDir);
         setServerPort(serverPort);
+        setWatchPathset(watchPathset);
       }
     })();
     return () => {
@@ -72,6 +76,13 @@ function Pref() {
           onChange={(e) => setServerPort(e.currentTarget.value)}
           placeholder="Server Port"
           value={serverPort}
+        />
+        <br />
+        <input
+          id="watch-pathset-input"
+          onChange={(e) => setWatchPathset(e.currentTarget.value)}
+          placeholder="Watch Pathset"
+          value={watchPathset}
         />
         <br />
         <br />
