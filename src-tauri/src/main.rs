@@ -33,6 +33,7 @@ async fn main() {
         .plugin(plugins::browser::init())
         .invoke_handler(tauri::generate_handler![
             app::quit_app,
+            app::restart_app,
             app::window::show_main_cmd,
             app::window::show_preferences_cmd,
         ])
