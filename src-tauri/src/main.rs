@@ -6,7 +6,7 @@ use tauri::Manager;
 use log::{error,info,warn};
 
 use immic_app::{
-    app,
+    app::{self, window::show_preferences},
     plugins,
 };
 
@@ -32,9 +32,9 @@ async fn main() {
         .plugin(plugins::filelog::init())
         .plugin(plugins::browser::init())
         .invoke_handler(tauri::generate_handler![
-            app::tray::quit_app,
-            app::tray::show_main,
-            app::tray::show_preferences,
+            app::quit_app,
+            app::window::show_main_cmd,
+            app::window::show_preferences_cmd,
         ])
         .setup(|app| {
             info!("setup");
@@ -51,6 +51,9 @@ async fn main() {
                 let db = app.state::<plugins::db::ImmicDb>();
                 if let Err(e) = db.start() {
                     warn!("DB error: {}", e);
+
+                    show_preferences(&app);
+
                     return;
                 }
                 if let Err(e) = db.migrate().await {
