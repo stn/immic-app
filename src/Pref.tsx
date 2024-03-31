@@ -19,9 +19,11 @@ async function settingSave() {
 
 function Pref() {
   const [dataDir, setDataDir] = useState("");
+  const [serverPort, setServerPort] = useState("");
 
   async function storePreferences() {
     await settingSet("data-dir", dataDir);
+    await settingSet("server-port", serverPort);
     await settingSave();
   }
 
@@ -30,8 +32,10 @@ function Pref() {
     (async () => {
       await settingLoad();
       const dataDir = await settingGet<string>("data-dir") || "";
+      const serverPort = await settingGet<string>("server-port") || "3294";
       if (isMounted) {
         setDataDir(dataDir);
+        setServerPort(serverPort);
       }
     })();
     return () => {
@@ -56,6 +60,13 @@ function Pref() {
           onChange={(e) => setDataDir(e.currentTarget.value)}
           placeholder="Data Directory"
           value={dataDir}
+        />
+        <br />
+        <input
+          id="server-port-input"
+          onChange={(e) => setServerPort(e.currentTarget.value)}
+          placeholder="Server Port"
+          value={serverPort}
         />
         <br />
         <br />
