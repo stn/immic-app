@@ -6,7 +6,7 @@ mod plugins;
 
 use dotenv::dotenv;
 use tauri::Manager;
-use log::{error,debug};
+use log::{error,info,warn};
 
 #[tokio::main]
 async fn main() {
@@ -35,7 +35,7 @@ async fn main() {
             app::tray::show_preferences,
         ])
         .setup(|app| {
-            debug!("setup");
+            info!("setup");
 
             let app = app.handle();
 
@@ -48,11 +48,11 @@ async fn main() {
                 // DB plugin
                 let db = app.state::<plugins::db::ImmicDb>();
                 if let Err(e) = db.start() {
-                    debug!("DB error: {}", e);
+                    warn!("DB error: {}", e);
                     return;
                 }
                 if let Err(e) = db.migrate().await {
-                    debug!("DB migration error: {}", e);
+                    error!("DB migration error: {}", e);
                     return;
                 }
 
@@ -80,8 +80,9 @@ async fn main() {
                         error!("Browser server error: {}", e);
                     });
                 });
-            });
 
+                info!("All plugins started");
+            });
             // tokio::spawn(async move {
             //     if let Err(e) = db::init(&app).await {
             //         error!("DB error: {}", e);

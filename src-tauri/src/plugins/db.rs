@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
-use log::{debug, error};
+use log::debug;
 use std::{
     path::PathBuf,
     sync::Mutex,
@@ -199,12 +199,12 @@ impl ImmicDb {
             return Ok(());
         }
 
-        let path = self.db_path();
-        if let Err(e) = path {
-            error!("failed to get db path: {:?}", e);
-            return Err(e);
-        }
-        let path = path.unwrap();
+        let path = self.db_path()?;
+        // if let Err(e) = path {
+        //     error!("failed to get db path: {}", e);
+        //     return Err(e);
+        // }
+        // let path = path.unwrap();
         let options = SqliteConnectOptions::new()
             .filename(path)
             .create_if_missing(true)
@@ -216,7 +216,7 @@ impl ImmicDb {
     }
 
     fn db_path(&self) -> Result<PathBuf> {
-        debug!("db_path");
+        // debug!("db_path");
         let setting = self.app.state::<SettingPlugin>();
         let data_dir = setting.get(DATA_DIR_SETTING)?
             .and_then(|v| v.as_str().map(|s| s.to_string()))
@@ -224,10 +224,10 @@ impl ImmicDb {
         if data_dir.is_none() {
             return Err(anyhow!("{} is not set", DATA_DIR_SETTING));
         }
-        debug!("{}: {:?}", DATA_DIR_SETTING, data_dir);
+        // debug!("{}: {:?}", DATA_DIR_SETTING, data_dir);
 
         let db_path = data_dir.unwrap().join(DATABASE_FILE);
-        debug!("db_path: {:?}", db_path);
+        // debug!("db_path: {}", db_path);
 
         Ok(db_path)
     }
