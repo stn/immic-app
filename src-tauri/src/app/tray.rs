@@ -8,7 +8,7 @@ use tauri::{
 };
 
 use crate::app::{
-    app::quit_app,
+    quit_app,
     window::{
         show_main,
         show_preferences,
