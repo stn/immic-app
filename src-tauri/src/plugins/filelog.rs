@@ -2,15 +2,17 @@ use anyhow::{anyhow, Result};
 use log::{debug, error, info};
 use std::{
     fmt,
-    sync::{ Arc, Mutex},
+    path::{Path, PathBuf, MAIN_SEPARATOR},
+    sync::{Arc, Mutex},
 };
 use tauri::{
     plugin::{self, TauriPlugin},
     AppHandle, Manager, State, Wry,
 };
-use tokio::sync::mpsc;
-use watchexec::Watchexec;
-use watchexec_signals::Signal; 
+use tokio::sync::{mpsc, watch};
+// use watchexec::Watchexec;
+// use watchexec_signals::Signal; 
+use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
 
 use crate::plugins::{
     db,
@@ -58,7 +60,7 @@ impl FilelogPlugin {
             return Ok(());
         }
 
-        let (tx, mut rx) = mpsc::channel::<Vec<FileEventInfo>>(64);
+        let (tx, mut rx) = mpsc::channel::<Vec<FileEventInfo>>(128);
 
         let self_clone = self.clone();
         let _manager = tokio::spawn(async move {
@@ -79,35 +81,72 @@ impl FilelogPlugin {
         });
 
         *self.running.lock().unwrap() = true;
-        // let running = Arc::clone(&self.running);
+        let running = Arc::clone(&self.running);
         let self_clone = self.clone();
-        let wx = Watchexec::new(move |mut action| {
-            if !*self_clone.running.lock().unwrap() {
-                action.quit();
-                return action;
-            }
-
-            // if Ctrl-C is received, quit
-            if action.signals().any(|sig| sig == Signal::Interrupt) {
-                self_clone.stop();
-                action.quit();
-                return action;
-            }
-
-            let infos: Vec<FileEventInfo> = action.events.iter().filter_map(event_to_file_event_info).collect();
-            tx.try_send(infos).unwrap();
-
-            action
-        }).unwrap();
-
-        // watch the current directory
-        wx.config.pathset(watch_pathset);
 
         tokio::spawn(async move {
-            wx.main().await.unwrap().unwrap();
+            for path in watch_pathset.iter() {
+                self_clone.async_watch(path).await.unwrap();
+            }
         });
 
+        // let wx = Watchexec::new(move |mut action| {
+        //     if !*self_clone.running.lock().unwrap() {
+        //         action.quit();
+        //         return action;
+        //     }
+
+        //     // if Ctrl-C is received, quit
+        //     if action.signals().any(|sig| sig == Signal::Interrupt) {
+        //         self_clone.stop();
+        //         action.quit();
+        //         return action;
+        //     }
+
+        //     let infos: Vec<FileEventInfo> = action.events.iter().filter_map(event_to_file_event_info).collect();
+        //     tx.try_send(infos).unwrap();
+
+        //     action
+        // }).unwrap();
+
+        // // watch the current directory
+        // wx.config.pathset(watch_pathset);
+
+        // tokio::spawn(async move {
+        //     wx.main().await.unwrap().unwrap();
+        // });
+
         Ok(())
+    }
+
+    async fn async_watch<P: AsRef<Path>>(&self, path: P) -> notify::Result<()> {
+        let (mut watcher, mut rx) = self.async_watcher()?;
+
+        // Add a path to be watched. All files and directories at that path and
+        // below will be monitored for changes.
+        watcher.watch(path.as_ref(), RecursiveMode::Recursive)?;
+
+        while let Some(res) = rx.recv().await {
+            match res {
+                Ok(event) => println!("changed: {:?}", event),
+                Err(e) => println!("watch error: {:?}", e),
+            }
+        }
+
+        Ok(())
+    }
+
+    fn async_watcher(&self) -> notify::Result<(RecommendedWatcher, mpsc::Receiver<notify::Result<Event>>)> {
+        let (mut tx, rx) = mpsc::channel(32);
+
+        let watcher = RecommendedWatcher::new(
+            move |res| {
+                tx.try_send(res).unwrap();
+            },
+            Config::default(),
+        )?;
+
+        Ok((watcher, rx))
     }
 
     pub fn stop(&self) {
@@ -308,50 +347,50 @@ impl fmt::Display for FileType {
     }
 }
 
-fn event_to_file_event_info(event: &watchexec_events::Event) -> Option<FileEventInfo> {
-    let mut source = None;
-    let mut kind: Option<FileKind> = None;
-    let mut p: Option<String> = None;
-    let mut ft: Option<FileType> = None;
-    for tag in event.tags.iter() {
-        match tag {
-            watchexec_events::Tag::Source(s) => source = Some(s),
-            watchexec_events::Tag::FileEventKind(k) => {
-                match k {
-                    watchexec_events::filekind::FileEventKind::Access(_) => kind = Some(FileKind::Access),
-                    watchexec_events::filekind::FileEventKind::Create(_) => kind = Some(FileKind::Create),
-                    watchexec_events::filekind::FileEventKind::Modify(_) => kind = Some(FileKind::Modify),
-                    watchexec_events::filekind::FileEventKind::Remove(_) => kind = Some(FileKind::Remove),
-                    _ => {
-                        error!("Unknown file event kind: {:?}", k)
-                    }
-                }
-            },
-            watchexec_events::Tag::Path { path, file_type } => {
-                p = Some(path.to_string_lossy().to_string());
-                match file_type {
-                    Some(watchexec_events::FileType::File) => ft = Some(FileType::File),
-                    Some(watchexec_events::FileType::Dir) => ft = Some(FileType::Dir),
-                    Some(watchexec_events::FileType::Symlink) => ft = Some(FileType::Symlink),
-                    Some(watchexec_events::FileType::Other) => ft = Some(FileType::Other),
-                    _ => {
-                        error!("Unknown file type: {:?}", file_type)
-                    }
-                }
-            },
-            _ => {}
-        }
-    }
-    if let (Some(watchexec_events::Source::Filesystem), Some(kind), Some(path)) = (source, kind, p) {
-        Some(FileEventInfo {
-            kind,
-            path,
-            file_type: ft.unwrap_or(FileType::Other),
-        })
-    } else {
-        None
-    }
-}
+// fn event_to_file_event_info(event: &watchexec_events::Event) -> Option<FileEventInfo> {
+//     let mut source = None;
+//     let mut kind: Option<FileKind> = None;
+//     let mut p: Option<String> = None;
+//     let mut ft: Option<FileType> = None;
+//     for tag in event.tags.iter() {
+//         match tag {
+//             watchexec_events::Tag::Source(s) => source = Some(s),
+//             watchexec_events::Tag::FileEventKind(k) => {
+//                 match k {
+//                     watchexec_events::filekind::FileEventKind::Access(_) => kind = Some(FileKind::Access),
+//                     watchexec_events::filekind::FileEventKind::Create(_) => kind = Some(FileKind::Create),
+//                     watchexec_events::filekind::FileEventKind::Modify(_) => kind = Some(FileKind::Modify),
+//                     watchexec_events::filekind::FileEventKind::Remove(_) => kind = Some(FileKind::Remove),
+//                     _ => {
+//                         error!("Unknown file event kind: {:?}", k)
+//                     }
+//                 }
+//             },
+//             watchexec_events::Tag::Path { path, file_type } => {
+//                 p = Some(path.to_string_lossy().to_string());
+//                 match file_type {
+//                     Some(watchexec_events::FileType::File) => ft = Some(FileType::File),
+//                     Some(watchexec_events::FileType::Dir) => ft = Some(FileType::Dir),
+//                     Some(watchexec_events::FileType::Symlink) => ft = Some(FileType::Symlink),
+//                     Some(watchexec_events::FileType::Other) => ft = Some(FileType::Other),
+//                     _ => {
+//                         error!("Unknown file type: {:?}", file_type)
+//                     }
+//                 }
+//             },
+//             _ => {}
+//         }
+//     }
+//     if let (Some(watchexec_events::Source::Filesystem), Some(kind), Some(path)) = (source, kind, p) {
+//         Some(FileEventInfo {
+//             kind,
+//             path,
+//             file_type: ft.unwrap_or(FileType::Other),
+//         })
+//     } else {
+//         None
+//     }
+// }
 
 #[derive(Debug, serde::Serialize)]
 pub struct FileLog {
