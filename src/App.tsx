@@ -11,7 +11,7 @@ import { ApplicationLog, BrowserLog, FileLog } from "./events";
 // }
 
 async function showMain() {
-  await invoke("show_main");
+  await invoke("show_main_cmd");
 }
 
 // async function showPreferences() {
