@@ -14,6 +14,7 @@ tauri-build = { version = "1.5", features = [] }
 
 [dependencies]
 tauri = { version = "1.5", features = [ "global-shortcut-all", "notification-all", "window-create", "process-command-api", "process-exit", "system-tray", "shell-open"] }
+tauri-plugin-autostart = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v1" }
 tauri-plugin-store = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v1" }
 
 active-win-pos-rs = "0.8.3"

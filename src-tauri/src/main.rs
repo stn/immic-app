@@ -24,6 +24,10 @@ async fn main() {
     tauri::async_runtime::set(tokio::runtime::Handle::current());
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(plugins::setting::init())
         .plugin(plugins::db::init())
