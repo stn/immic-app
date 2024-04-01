@@ -1,13 +1,20 @@
 use anyhow::Result;
 use log::{debug, error, info};
-use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use notify_debouncer_full::{
+    notify::{self, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher},
+    new_debouncer,
+    Debouncer,
+    DebounceEventResult,
+    FileIdMap,
+};
 use once_cell::sync::Lazy;
-use regex::RegexSet;
+use regex::Regex;
 use std::{
     collections::HashSet,
     fmt,
-    path::{PathBuf, MAIN_SEPARATOR},
+    path::PathBuf,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 use tauri::{
     plugin::{self, TauriPlugin},
@@ -22,6 +29,32 @@ use crate::plugins::{
 
 const KIND: &str = "file";
 const WATCH_PATHSEST_SETTING: &str = "watch-pathset";
+
+static IGNORE_EXTS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
+    vec![
+        "pyc",
+        "pyo",
+        "swp",
+        "swx",
+        "db",
+        "db-shm",
+        "db-wal",
+        "lock",
+        "log",
+        "sln",
+    ].iter().cloned().collect()
+});
+
+#[cfg(target_os = "windows")]
+static IGNORE_PAT: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(\\\.(git|hg|svn|idea|vscode)\\)|(\\(dist|dist-ssr|node_modules|target)\\)").unwrap()
+});
+
+#[cfg(not(target_os = "windows"))]
+static IGNORE_PAT: Lazy<Regex> = Lazy::new(|| {
+    use std::path::MAIN_SEPARATOR;
+    Regex::new(&format!("({MAIN_SEPARATOR}\\.(git|hg|svn|idea|vscode){MAIN_SEPARATOR})|({MAIN_SEPARATOR}(dist|dist-ssr|node_modules|target){MAIN_SEPARATOR})")).unwrap()
+});
 
 pub fn init() -> TauriPlugin<Wry> {
     plugin::Builder::new("filelog")
@@ -76,15 +109,15 @@ impl FilelogPlugin {
     }
 
     async fn async_watch(&self, pathset: &Vec<PathBuf>) -> Result<()> {
-        let (mut watcher, mut rx) = self.async_watcher()?;
+        let (mut debouncer, mut rx) = self.async_watcher()?;
 
         // Add each path to be watched. All files and directories at that path and
         // below will be monitored for changes.
         for path in pathset.iter() {
-            watcher.watch(path, RecursiveMode::Recursive)?;
+            debouncer.watcher().watch(path, RecursiveMode::Recursive)?;
         }
 
-        while let Some(info) = rx.recv().await {
+        while let Some(infos) = rx.recv().await {
             // Check if the watcher has been stopped
             if !*self.running.lock().unwrap() {
                 // 実際には、上のrecvがブロックされているので、ここには来ない。
@@ -92,43 +125,73 @@ impl FilelogPlugin {
                 break;
             }
 
-            debug!("file event info: {:?}", info);
-            match self.insert_info(&info).await {
-                Ok(id) => {
-                    debug!("filelog: inserted id: {:?}", id);
-                },
-                Err(e) => {
-                    error!("Error on insert filelog: {:?}", e);
-                },
+            for info in infos.iter() {
+                debug!("file event info: {:?}", info);
+                match self.insert_info(info).await {
+                    Ok(id) => {
+                        debug!("filelog: inserted id: {:?}", id);
+                    },
+                    Err(e) => {
+                        error!("Error on insert filelog: {:?}", e);
+                    },
+                }
             }
         }
 
         Ok(())
     }
 
-    fn async_watcher(&self) -> notify::Result<(RecommendedWatcher, mpsc::Receiver<FileEventInfo>)> {
+    fn async_watcher(&self) -> notify::Result<(Debouncer<RecommendedWatcher, FileIdMap>, mpsc::Receiver<Vec<FileEventInfo>>)> {
         let (tx, rx) = mpsc::channel(32);
 
-        let watcher = RecommendedWatcher::new(
-            move |res| {
-                match res {
-                    Ok(event) => {
-                        let info = FileEventInfo::from(event);
-                        if check_ignore(&info) {
-                            debug!("ignore: {:?}", info);
-                            return;
-                        }
-                        tx.blocking_send(info).unwrap();
-                    },
-                    Err(e) => {
+        let debouncer = new_debouncer(Duration::from_secs(2), None, move |result: DebounceEventResult| {
+            match result {
+                Ok(debounce_events) => {
+                    let infos = debounce_events.iter()
+                        .map(|de| {
+                            let info = FileEventInfo::from(&de.event);
+                            if check_ignore(&info) {
+                                debug!("ignore: {:?}", info);
+                                None
+                            } else {
+                                Some(info)
+                            }
+                        })
+                        .filter(|info| info.is_some())
+                        .map(|info| info.unwrap())
+                        .collect::<Vec<_>>();
+                    tx.blocking_send(infos).unwrap();
+                },
+                Err(errors) => {
+                    errors.iter().for_each(|e| {
                         error!("watch error: {:?}", e);
-                    }
-                }
-            },
-            Config::default(),
-        )?;
+                    });
+                },
+            }
+        }).unwrap();
 
-        Ok((watcher, rx))
+        Ok((debouncer, rx))
+
+        // let watcher = RecommendedWatcher::new(
+        //     move |res| {
+        //         match res {
+        //             Ok(event) => {
+        //                 let info = FileEventInfo::from(event);
+        //                 if check_ignore(&info) {
+        //                     debug!("ignore: {:?}", info);
+        //                     return;
+        //                 }
+        //                 tx.blocking_send(info).unwrap();
+        //             },
+        //             Err(e) => {
+        //                 error!("watch error: {:?}", e);
+        //             }
+        //         }
+        //     },
+        //     Config::default(),
+        // )?;
+
+        // Ok((watcher, rx))
     }
 
     fn watch_pathset(&self) -> Result<Vec<PathBuf>> {
@@ -305,8 +368,8 @@ impl fmt::Display for FileKind {
     }
 }
 
-impl From<Event> for FileEventInfo {
-    fn from(event: Event) -> Self {
+impl From<&Event> for FileEventInfo {
+    fn from(event: &Event) -> Self {
         let kind = match event.kind {
             EventKind::Create(_) => FileKind::Create,
             EventKind::Modify(_) => FileKind::Modify,
@@ -322,38 +385,9 @@ impl From<Event> for FileEventInfo {
             path,
         }
     }
-
 }
 
 fn check_ignore(info: &FileEventInfo) -> bool {
-    static IGNORE_EXTS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
-        vec![
-            "pyc",
-            "pyo",
-            "swp",
-            "swx",
-            "db",
-            "db-shm",
-            "db-wal",
-            "lock",
-            "log",
-            "sln",
-        ].iter().cloned().collect()
-    });
-    static IGNORE_PAT: Lazy<RegexSet> = Lazy::new(|| {
-        RegexSet::new(&[
-            format!(".*{MAIN_SEPARATOR}\\.git{MAIN_SEPARATOR}.*"),
-            format!(".*{MAIN_SEPARATOR}\\.hg{MAIN_SEPARATOR}.*"),
-            format!(".*{MAIN_SEPARATOR}\\.svn{MAIN_SEPARATOR}.*"),
-            format!(".*{MAIN_SEPARATOR}\\.idea{MAIN_SEPARATOR}.*"),
-            format!(".*{MAIN_SEPARATOR}\\.vscode{MAIN_SEPARATOR}.*"),
-            format!(".*{MAIN_SEPARATOR}dist{MAIN_SEPARATOR}.*"),
-            format!(".*{MAIN_SEPARATOR}dist-ssr{MAIN_SEPARATOR}.*"),
-            format!(".*{MAIN_SEPARATOR}node_modules{MAIN_SEPARATOR}.*"),
-            format!(".*{MAIN_SEPARATOR}target{MAIN_SEPARATOR}.*"),
-        ]).unwrap()
-    });
-
     // Ignore other events than create, modify, remove
     if info.kind == FileKind::Other {
         return true;
@@ -385,7 +419,7 @@ fn check_ignore(info: &FileEventInfo) -> bool {
     }
 
     // Ignore files in ignore list
-    if IGNORE_PAT.is_match(&name) {
+    if IGNORE_PAT.is_match(&info.path.to_string_lossy().to_string()) {
         return true;
     }
 
