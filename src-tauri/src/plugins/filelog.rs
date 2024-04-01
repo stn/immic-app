@@ -1,8 +1,12 @@
 use anyhow::Result;
 use log::{debug, error, info};
+use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use once_cell::sync::Lazy;
+use regex::RegexSet;
 use std::{
+    collections::HashSet,
     fmt,
-    path::PathBuf,
+    path::{PathBuf, MAIN_SEPARATOR},
     sync::{Arc, Mutex},
 };
 use tauri::{
@@ -10,7 +14,6 @@ use tauri::{
     AppHandle, Manager, State, Wry,
 };
 use tokio::sync::mpsc;
-use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 
 use crate::plugins::{
     db,
@@ -72,7 +75,7 @@ impl FilelogPlugin {
         Ok(())
     }
 
-    async fn async_watch(&self, pathset: &Vec<PathBuf>) -> notify::Result<()> {
+    async fn async_watch(&self, pathset: &Vec<PathBuf>) -> Result<()> {
         let (mut watcher, mut rx) = self.async_watcher()?;
 
         // Add each path to be watched. All files and directories at that path and
@@ -81,7 +84,7 @@ impl FilelogPlugin {
             watcher.watch(path, RecursiveMode::Recursive)?;
         }
 
-        while let Some(res) = rx.recv().await {
+        while let Some(info) = rx.recv().await {
             // Check if the watcher has been stopped
             if !*self.running.lock().unwrap() {
                 // 実際には、上のrecvがブロックされているので、ここには来ない。
@@ -89,32 +92,38 @@ impl FilelogPlugin {
                 break;
             }
 
-            match res {
-                Ok(event) => {
-                    let info = FileEventInfo::from(event);
-                    debug!("filelog: {:?}", info);
-                    match self.insert_info(&info).await {
-                        Ok(id) => {
-                            debug!("filelog: inserted id: {:?}", id);
-                        },
-                        Err(e) => {
-                            error!("Error on insert filelog: {:?}", e);
-                        },
-                    }
+            debug!("file event info: {:?}", info);
+            match self.insert_info(&info).await {
+                Ok(id) => {
+                    debug!("filelog: inserted id: {:?}", id);
                 },
-                Err(e) => error!("watch error: {:?}", e),
+                Err(e) => {
+                    error!("Error on insert filelog: {:?}", e);
+                },
             }
         }
 
         Ok(())
     }
 
-    fn async_watcher(&self) -> notify::Result<(RecommendedWatcher, mpsc::Receiver<notify::Result<Event>>)> {
+    fn async_watcher(&self) -> notify::Result<(RecommendedWatcher, mpsc::Receiver<FileEventInfo>)> {
         let (tx, rx) = mpsc::channel(32);
 
         let watcher = RecommendedWatcher::new(
             move |res| {
-                tx.blocking_send(res).unwrap();
+                match res {
+                    Ok(event) => {
+                        let info = FileEventInfo::from(event);
+                        if check_ignore(&info) {
+                            debug!("ignore: {:?}", info);
+                            return;
+                        }
+                        tx.blocking_send(info).unwrap();
+                    },
+                    Err(e) => {
+                        error!("watch error: {:?}", e);
+                    }
+                }
             },
             Config::default(),
         )?;
@@ -144,6 +153,8 @@ impl FilelogPlugin {
         let event_id = db.insert_eventlog(timestamp, KIND).await?;
         let pool = db.pool().await.expect("db pool is not set");
 
+        let path = info.path.to_string_lossy().to_string();
+
         // Search file_info by path
         let result = sqlx::query_as::<_, (i64,)>(
             r#"
@@ -152,7 +163,7 @@ impl FilelogPlugin {
             WHERE path = ?
             "#
         )
-        .bind(&info.path)
+        .bind(&path)
         .fetch_one(&pool)
         .await;
 
@@ -166,7 +177,7 @@ impl FilelogPlugin {
                     VALUES (?)
                     "#
                 )
-                .bind(&info.path)
+                .bind(&path)
                 .execute(&pool)
                 .await?;
                 result.last_insert_rowid()
@@ -272,7 +283,7 @@ impl FilelogPlugin {
 #[derive(Debug,PartialEq)]
 struct FileEventInfo {
     kind: FileKind,
-    path: String,
+    path: PathBuf,
 }
 
 #[derive(Debug,PartialEq)]
@@ -303,7 +314,8 @@ impl From<Event> for FileEventInfo {
             _ => FileKind::Other,
         };
 
-        let path = event.paths.iter().next().unwrap().to_string_lossy().to_string();
+        // Rename event has two paths, but we only check the first one for now.
+        let path = event.paths.iter().next().unwrap().clone();
 
         Self {
             kind,
@@ -311,6 +323,73 @@ impl From<Event> for FileEventInfo {
         }
     }
 
+}
+
+fn check_ignore(info: &FileEventInfo) -> bool {
+    static IGNORE_EXTS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
+        vec![
+            "pyc",
+            "pyo",
+            "swp",
+            "swx",
+            "db",
+            "db-shm",
+            "db-wal",
+            "lock",
+            "log",
+            "sln",
+        ].iter().cloned().collect()
+    });
+    static IGNORE_PAT: Lazy<RegexSet> = Lazy::new(|| {
+        RegexSet::new(&[
+            format!(".*{MAIN_SEPARATOR}\\.git{MAIN_SEPARATOR}.*"),
+            format!(".*{MAIN_SEPARATOR}\\.hg{MAIN_SEPARATOR}.*"),
+            format!(".*{MAIN_SEPARATOR}\\.svn{MAIN_SEPARATOR}.*"),
+            format!(".*{MAIN_SEPARATOR}\\.idea{MAIN_SEPARATOR}.*"),
+            format!(".*{MAIN_SEPARATOR}\\.vscode{MAIN_SEPARATOR}.*"),
+            format!(".*{MAIN_SEPARATOR}dist{MAIN_SEPARATOR}.*"),
+            format!(".*{MAIN_SEPARATOR}dist-ssr{MAIN_SEPARATOR}.*"),
+            format!(".*{MAIN_SEPARATOR}node_modules{MAIN_SEPARATOR}.*"),
+            format!(".*{MAIN_SEPARATOR}target{MAIN_SEPARATOR}.*"),
+        ]).unwrap()
+    });
+
+    // Ignore other events than create, modify, remove
+    if info.kind == FileKind::Other {
+        return true;
+    }
+
+    let name = info.path.file_name();
+    if name.is_none() {
+        return true;
+    }
+
+    let ext = info.path.extension();
+    if ext.is_some() {
+        let ext = ext.unwrap().to_string_lossy().to_string();
+        if IGNORE_EXTS.contains(&ext.as_str()) {
+            return true;
+        }
+    }
+
+    let name = name.unwrap().to_string_lossy().to_string();
+
+    // Ignore hidden files
+    if name.starts_with(".") {
+        return true;
+    }
+
+    // Ignore temporary files
+    if name.ends_with("~") {
+        return true;
+    }
+
+    // Ignore files in ignore list
+    if IGNORE_PAT.is_match(&name) {
+        return true;
+    }
+
+    false
 }
 
 #[derive(Debug, serde::Serialize)]
