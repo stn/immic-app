@@ -1,16 +1,16 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use log::{debug, error, info};
 use std::{
     fmt,
-    sync::{ Arc, Mutex},
+    path::PathBuf,
+    sync::{Arc, Mutex},
 };
 use tauri::{
     plugin::{self, TauriPlugin},
     AppHandle, Manager, State, Wry,
 };
 use tokio::sync::mpsc;
-use watchexec::Watchexec;
-use watchexec_signals::Signal; 
+use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 
 use crate::plugins::{
     db,
@@ -52,21 +52,48 @@ impl FilelogPlugin {
     pub fn start(&self) -> Result<()> {
         info!("starting filelog");
         
+        // Check if setting and db are ready
+        let _setting = self.app.state::<SettingPlugin>();
+        let _db = self.app.state::<db::ImmicDb>();
+
         let watch_pathset = self.watch_pathset()?;
         if watch_pathset.is_empty() {
             debug!("watch_pathset is empty");
             return Ok(());
         }
 
-        let (tx, mut rx) = mpsc::channel::<Vec<FileEventInfo>>(64);
+        *self.running.lock().unwrap() = true;
 
         let self_clone = self.clone();
-        let _manager = tokio::spawn(async move {
-            while let Some(infos) = rx.recv().await {
-                debug!("Received file_event_infos: {:?}", infos);
-                for info in infos.iter() {
+        tokio::spawn(async move {
+            self_clone.async_watch(&watch_pathset).await.unwrap();
+        });
+
+        Ok(())
+    }
+
+    async fn async_watch(&self, pathset: &Vec<PathBuf>) -> notify::Result<()> {
+        let (mut watcher, mut rx) = self.async_watcher()?;
+
+        // Add each path to be watched. All files and directories at that path and
+        // below will be monitored for changes.
+        for path in pathset.iter() {
+            watcher.watch(path, RecursiveMode::Recursive)?;
+        }
+
+        while let Some(res) = rx.recv().await {
+            // Check if the watcher has been stopped
+            if !*self.running.lock().unwrap() {
+                // 実際には、上のrecvがブロックされているので、ここには来ない。
+                // watcherをdropする必要がある。
+                break;
+            }
+
+            match res {
+                Ok(event) => {
+                    let info = FileEventInfo::from(event);
                     debug!("filelog: {:?}", info);
-                    match self_clone.insert_info(info).await {
+                    match self.insert_info(&info).await {
                         Ok(id) => {
                             debug!("filelog: inserted id: {:?}", id);
                         },
@@ -74,59 +101,40 @@ impl FilelogPlugin {
                             error!("Error on insert filelog: {:?}", e);
                         },
                     }
-                }
+                },
+                Err(e) => error!("watch error: {:?}", e),
             }
-        });
-
-        *self.running.lock().unwrap() = true;
-        // let running = Arc::clone(&self.running);
-        let self_clone = self.clone();
-        let wx = Watchexec::new(move |mut action| {
-            if !*self_clone.running.lock().unwrap() {
-                action.quit();
-                return action;
-            }
-
-            // if Ctrl-C is received, quit
-            if action.signals().any(|sig| sig == Signal::Interrupt) {
-                self_clone.stop();
-                action.quit();
-                return action;
-            }
-
-            let infos: Vec<FileEventInfo> = action.events.iter().filter_map(event_to_file_event_info).collect();
-            tx.try_send(infos).unwrap();
-
-            action
-        }).unwrap();
-
-        // watch the current directory
-        wx.config.pathset(watch_pathset);
-
-        tokio::spawn(async move {
-            wx.main().await.unwrap().unwrap();
-        });
+        }
 
         Ok(())
+    }
+
+    fn async_watcher(&self) -> notify::Result<(RecommendedWatcher, mpsc::Receiver<notify::Result<Event>>)> {
+        let (tx, rx) = mpsc::channel(32);
+
+        let watcher = RecommendedWatcher::new(
+            move |res| {
+                tx.blocking_send(res).unwrap();
+            },
+            Config::default(),
+        )?;
+
+        Ok((watcher, rx))
+    }
+
+    fn watch_pathset(&self) -> Result<Vec<PathBuf>> {
+        let setting = self.app.state::<SettingPlugin>();
+        let watch_pathset = setting.get(WATCH_PATHSEST_SETTING)?
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .map(|s| s.split(',').map(PathBuf::from).collect());
+        debug!("watch_pathset: {:?}", watch_pathset);
+
+        Ok(watch_pathset.unwrap())
     }
 
     pub fn stop(&self) {
         debug!("filelog stop");
         *self.running.lock().unwrap() = false;
-    }
-
-    fn watch_pathset(&self) -> Result<Vec<String>> {
-        // debug!("db_path");
-        let setting = self.app.state::<SettingPlugin>();
-        let watch_pathset = setting.get(WATCH_PATHSEST_SETTING)?
-            .and_then(|v| v.as_str().map(|s| s.to_string()))
-            .map(|s| s.split(',').map(|s| s.to_string()).collect::<Vec<String>>());
-        if watch_pathset.is_none() {
-            return Err(anyhow!("{} is not set", WATCH_PATHSEST_SETTING));
-        }
-        debug!("watch_pathset: {:?}", watch_pathset);
-
-        Ok(watch_pathset.unwrap())
     }
 
     async fn insert_info(&self, info: &FileEventInfo) -> Result<i64> {
@@ -154,12 +162,11 @@ impl FilelogPlugin {
                 // Insert file_info for new path
                 let result = sqlx::query(
                     r#"
-                    INSERT INTO file_info (path, file_type)
-                    VALUES (?, ?)
+                    INSERT INTO file_info (path)
+                    VALUES (?)
                     "#
                 )
                 .bind(&info.path)
-                .bind(&info.file_type.to_string())
                 .execute(&pool)
                 .await?;
                 result.last_insert_rowid()
@@ -237,9 +244,9 @@ impl FilelogPlugin {
         let db = self.app.state::<db::ImmicDb>();
         let pool = db.pool().await.expect("db pool is not set");
 
-        let result = sqlx::query_as::<_, (i64, String, Option<String>)>(
+        let result = sqlx::query_as::<_, (i64, String)>(
             r#"
-            SELECT id, path, file_type
+            SELECT id, path
             FROM file_info
             WHERE id = ?
             "#
@@ -249,11 +256,10 @@ impl FilelogPlugin {
         .await;
 
         match result {
-            Ok((id, path, file_type)) => {
+            Ok((id, path)) => {
                 Ok(FileInfo {
                     id: id,
                     path: path,
-                    file_type: file_type,
                 })
             },
             Err(_) => {
@@ -267,90 +273,44 @@ impl FilelogPlugin {
 struct FileEventInfo {
     kind: FileKind,
     path: String,
-    file_type: FileType,
 }
 
 #[derive(Debug,PartialEq)]
 enum FileKind {
-    Access,
     Create,
     Modify,
     Remove,
+    Other,
 }
 
 impl fmt::Display for FileKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            FileKind::Access => write!(f, "access"),
             FileKind::Create => write!(f, "create"),
             FileKind::Modify => write!(f, "modify"),
             FileKind::Remove => write!(f, "remove"),
+            FileKind::Other => write!(f, "other"),
         }
     }
 }
 
-#[derive(Debug,PartialEq)]
-enum FileType {
-    File,
-    Dir,
-    Symlink,
-    Other,
-}
+impl From<Event> for FileEventInfo {
+    fn from(event: Event) -> Self {
+        let kind = match event.kind {
+            EventKind::Create(_) => FileKind::Create,
+            EventKind::Modify(_) => FileKind::Modify,
+            EventKind::Remove(_) => FileKind::Remove,
+            _ => FileKind::Other,
+        };
 
-impl fmt::Display for FileType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            FileType::File => write!(f, "file"),
-            FileType::Dir => write!(f, "dir"),
-            FileType::Symlink => write!(f, "symlink"),
-            _ => write!(f, ""),
-        }
-    }
-}
+        let path = event.paths.iter().next().unwrap().to_string_lossy().to_string();
 
-fn event_to_file_event_info(event: &watchexec_events::Event) -> Option<FileEventInfo> {
-    let mut source = None;
-    let mut kind: Option<FileKind> = None;
-    let mut p: Option<String> = None;
-    let mut ft: Option<FileType> = None;
-    for tag in event.tags.iter() {
-        match tag {
-            watchexec_events::Tag::Source(s) => source = Some(s),
-            watchexec_events::Tag::FileEventKind(k) => {
-                match k {
-                    watchexec_events::filekind::FileEventKind::Access(_) => kind = Some(FileKind::Access),
-                    watchexec_events::filekind::FileEventKind::Create(_) => kind = Some(FileKind::Create),
-                    watchexec_events::filekind::FileEventKind::Modify(_) => kind = Some(FileKind::Modify),
-                    watchexec_events::filekind::FileEventKind::Remove(_) => kind = Some(FileKind::Remove),
-                    _ => {
-                        error!("Unknown file event kind: {:?}", k)
-                    }
-                }
-            },
-            watchexec_events::Tag::Path { path, file_type } => {
-                p = Some(path.to_string_lossy().to_string());
-                match file_type {
-                    Some(watchexec_events::FileType::File) => ft = Some(FileType::File),
-                    Some(watchexec_events::FileType::Dir) => ft = Some(FileType::Dir),
-                    Some(watchexec_events::FileType::Symlink) => ft = Some(FileType::Symlink),
-                    Some(watchexec_events::FileType::Other) => ft = Some(FileType::Other),
-                    _ => {
-                        error!("Unknown file type: {:?}", file_type)
-                    }
-                }
-            },
-            _ => {}
-        }
-    }
-    if let (Some(watchexec_events::Source::Filesystem), Some(kind), Some(path)) = (source, kind, p) {
-        Some(FileEventInfo {
+        Self {
             kind,
             path,
-            file_type: ft.unwrap_or(FileType::Other),
-        })
-    } else {
-        None
+        }
     }
+
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -367,7 +327,6 @@ pub struct FileLog {
 pub struct FileInfo {
     pub id: i64,
     pub path: String,
-    pub file_type: Option<String>,
 }
 
 #[tauri::command]
