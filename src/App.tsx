@@ -4,6 +4,8 @@ import * as GS from "@tauri-apps/api/globalShortcut";
 
 import { Button } from "@/components/ui/button";
 
+import { ThemeProvider } from "@/components/theme-provider"
+
 import { ApplicationLog, BrowserLog, FileLog } from "./events";
 import { settingGet, settingLoad, showMain } from "./lib";
 
@@ -66,56 +68,54 @@ function App() {
   }, []);
 
   return (
-    <div className="container">
-      <h1>Welcome to Tauri!</h1>
+    <ThemeProvider defaultTheme="dark" storageKey="ui-theme">
+      <div className="container">
+        <form
+          className="row"
+          onSubmit={(e) => {
+            e.preventDefault();
+            listDates();
+          }}
+        >
+          <Button type="submit">Greet</Button>
+        </form>
 
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          listDates();
-        }}
-      >
-        <Button type="submit">Greet</Button>
-      </form>
-
-      <div>
-        {dates.map((date) => (
-          <Button key={date} onClick={() => {
-            // setDate(date);
-            listApplicationLogs(date);
-            listBrowserLogs(date);
-            listFileLogs(date);
-            listScreenshots(date);
-          }}>
-            {date}
-          </Button>
-        ))}
+        <div>
+          {dates.map((date) => (
+            <Button key={date} onClick={() => {
+              // setDate(date);
+              listApplicationLogs(date);
+              listBrowserLogs(date);
+              listFileLogs(date);
+              listScreenshots(date);
+            }}>
+              {date}
+            </Button>
+          ))}
+        </div>
+        <div>
+          {applications.map((app) => (
+            <div key={app.id}>{app.id}: {JSON.stringify(app)}</div>
+          ))}
+        </div>
+        <div>
+          {browsers.map((browser) => (
+            <div key={browser.id}>{browser.id}: {JSON.stringify(browser)}</div>
+          ))}
+        </div>
+        <div>
+          {filelogs.map((filelog) => (
+            <div key={filelog.id}>{filelog.id}: {JSON.stringify(filelog)}</div>
+          ))}
+        </div>
+        <div>
+          {screens.map((screen) => (
+            // <div key={screen}>{screen}</div>
+            <img key={screen} src={'https://iss.localhost/' + screen + '-t'} alt={screen} />
+          ))}
+        </div>
       </div>
-      <div>
-        {applications.map((app) => (
-          <div key={app.id}>{app.id}: {JSON.stringify(app)}</div>
-        ))}
-      </div>
-      <div>
-        {browsers.map((browser) => (
-          <div key={browser.id}>{browser.id}: {JSON.stringify(browser)}</div>
-        ))}
-      </div>
-      <div>
-        {filelogs.map((filelog) => (
-          <div key={filelog.id}>{filelog.id}: {JSON.stringify(filelog)}</div>
-        ))}
-      </div>
-      <div>
-        {screens.map((screen) => (
-          // <div key={screen}>{screen}</div>
-          <img key={screen} src={'https://iss.localhost/' + screen + '-t'} alt={screen} />
-        ))}
-      </div>
-    </div>
+    </ThemeProvider>
   );
 }
 
