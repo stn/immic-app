@@ -3,20 +3,10 @@ import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/tauri";
 import * as GS from "@tauri-apps/api/globalShortcut";
 
-import "./App.css";
 import { ApplicationLog, BrowserLog, FileLog } from "./events";
+import { settingGet, settingLoad, showMain } from "./lib";
 
-// async function quitApp() {
-//   await invoke("quit_app");
-// }
-
-async function showMain() {
-  await invoke("show_main_cmd");
-}
-
-// async function showPreferences() {
-//   await invoke("show_preferences");
-// }
+import "./App.css";
 
 function App() {
   const [dates, setDates] = useState<string[]>([]);
@@ -25,6 +15,8 @@ function App() {
   const [browsers, setBrowsers] = useState<BrowserLog[]>([]);
   const [filelogs, setFilelogs] = useState<FileLog[]>([]);
   const [screens, setScreens] = useState<string[]>([]);
+  const [globalShortcut, setGlobalShortcut] = useState<string>();
+  const [shortcutRegistered, setShortcutRegistered] = useState<boolean>(false);
 
   async function listDates() {
     setDates(await invoke("plugin:immicdb|list_eventlog_dates"));
@@ -47,16 +39,29 @@ function App() {
   }
 
   useEffect(() => {
-    const registerShortCuts = async () => {
-      await GS.register("Alt+Shift+K", () => {
-        console.log("Alt+Shift+K pressed");
-        showMain();
-      });
-    };
-    registerShortCuts();
-    return () => {
-      GS.unregister("Alt+Shift+K");
+    if (shortcutRegistered) {
+      return;
     }
+
+    let isMounted = true;
+    const loadGlobalShortcut = async () => {
+      await settingLoad();
+      const shortcut = await settingGet<string>("global-shortcut") || "Alt+Shift+K";
+      if (isMounted) {
+        await GS.register(shortcut, () => {
+          showMain();
+        });
+        console.log('registered shortcut: ', shortcut)
+        setGlobalShortcut(shortcut);
+        setShortcutRegistered(true);
+      }
+    }
+    loadGlobalShortcut();
+
+    return () => {
+      isMounted = false;
+      globalShortcut && GS.unregister(globalShortcut);
+    };
   }, []);
 
   return (

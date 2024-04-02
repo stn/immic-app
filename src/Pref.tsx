@@ -1,37 +1,20 @@
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/tauri";
 import * as autostart from "tauri-plugin-autostart-api";
 
-async function settingSet(key: string, value: any) {
-  return await invoke("plugin:setting|set", { key, value });
-}
-
-async function settingGet<T>(key: string) {
-  return await invoke("plugin:setting|get", { key }) as T;
-}
-
-async function settingLoad() {
-  return await invoke("plugin:setting|load");
-}
-
-async function settingSave() {
-  return await invoke("plugin:setting|save");
-}
-
-async function quitApp() {
-  return await invoke("quit_app");
-}
+import { settingGet, settingLoad, settingSave, settingSet, quitApp } from "./lib";
 
 function Pref() {
   const [dataDir, setDataDir] = useState("");
   const [serverPort, setServerPort] = useState("");
   const [watchPathset, setWatchPathset] = useState<string>("");
   const [autostartEnabled, setAutostartEnabled] = useState(false);
+  const [globalShortcut, setGlobalShortcut] = useState<string>("");
 
   async function storePreferences() {
     await settingSet("data-dir", dataDir);
     await settingSet("server-port", serverPort);
     await settingSet("watch-pathset", watchPathset);
+    await settingSet("global-shortcut", globalShortcut);
     await settingSave();
     await quitApp();
   }
@@ -44,11 +27,13 @@ function Pref() {
       const serverPort = await settingGet<string>("server-port") || "53294";
       const watchPathset = await settingGet<string>("watch-pathset") || "";
       const autostartEnabled = await autostart.isEnabled();
+      const globalShortcut = await settingGet<string>("global-shortcut") || "Alt+Shift+K";
       if (isMounted) {
         setDataDir(dataDir);
         setServerPort(serverPort);
         setWatchPathset(watchPathset);
         setAutostartEnabled(autostartEnabled);
+        setGlobalShortcut(globalShortcut);
       }
     })();
     return () => {
@@ -76,6 +61,7 @@ function Pref() {
           value={dataDir}
         />
         <br />
+
         <label>Server Port</label>
         <input
           id="server-port-input"
@@ -84,6 +70,7 @@ function Pref() {
           value={serverPort}
         />
         <br />
+
         <label>Watch Pathset</label>
         <input
           id="watch-pathset-input"
@@ -92,6 +79,7 @@ function Pref() {
           value={watchPathset}
         />
         <br />
+
         <label>Autostart</label>
         <input
           id="autostart-input"
@@ -107,6 +95,16 @@ function Pref() {
           }}
         />
         <br />
+
+        <label>Global Shortcut</label>
+        <input
+          id="global-shortcut-input"
+          onChange={(e) => setGlobalShortcut(e.currentTarget.value)}
+          placeholder="Global Shortcut"
+          value={globalShortcut}
+        />
+        <br />
+
         <button type="submit">Save</button>
       </form>
     </div>
