@@ -6,8 +6,8 @@
     "distDir": "../dist"
   },
   "package": {
-    "productName": "immic-app",
-    "version": "0.0.0"
+    "productName": "immic-app-dev",
+    "version": "0.1.0"
   },
   "tauri": {
     "allowlist": {
