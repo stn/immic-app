@@ -41,7 +41,7 @@ function Pref() {
     (async () => {
       await settingLoad();
       const dataDir = await settingGet<string>("data-dir") || "";
-      const serverPort = await settingGet<string>("server-port") || "3294";
+      const serverPort = await settingGet<string>("server-port") || "53294";
       const watchPathset = await settingGet<string>("watch-pathset") || "";
       const autostartEnabled = await autostart.isEnabled();
       if (isMounted) {
