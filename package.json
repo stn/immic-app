@@ -1,7 +1,7 @@
 {
   "name": "immic-app",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -17,6 +17,7 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^1.5.11",
+    "@types/node": "^20.12.2",
     "@types/react": "^18.2.72",
     "@types/react-dom": "^18.2.22",
     "@vitejs/plugin-react": "^4.2.1",
