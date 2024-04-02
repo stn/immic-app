@@ -39,19 +39,6 @@ pub fn init() -> TauriPlugin<Wry> {
                 handle_iss_protocol(&app, &request)
             }
         )
-        // .on_event(|app_handle, event| {
-        //     match event {
-        //         RunEvent::Ready => {
-        //             let plugin = app_handle.state::<ScreenshotPlugin>();
-        //             plugin.start();
-        //         },
-        //         RunEvent::Exit => {
-        //             let plugin = app_handle.state::<ScreenshotPlugin>();
-        //             plugin.stop();
-        //         },
-        //         _ => (),
-        //     }
-        // })
         .build()
 }
 
@@ -64,9 +51,6 @@ pub struct ScreenshotPlugin {
 
 impl ScreenshotPlugin {
     fn new(app: AppHandle) -> Self {
-        // let image_dir = image_dir(app).ok();
-        // debug!("image_dir: {:?}", image_dir);
-
         Self {
             app,
             image_dir: Arc::new(Mutex::new(None)),
@@ -123,6 +107,10 @@ impl ScreenshotPlugin {
                 timestamp: chrono::Utc::now(),
                 image: monitor.capture_image().unwrap(),
             };
+            if is_blank(&screenshot.image) {
+                debug!("Blank screen: monitor: {}", screenshot.monitor);
+                break;
+            }
             self.insert_screenshot_log(&screenshot).await?;
             self.save_screenshot(&screenshot).await?;
 
@@ -249,6 +237,24 @@ fn image_path(dir: &PathBuf, timestamp: DateTime<Utc>, monitor_id: i64) -> (Path
     (path, thumb_path)
 }
 
+fn is_blank(image: &RgbaImage) -> bool {
+    static ALMOST_BLACK_THRESHOLD: u8 = 20;
+    static NON_BLANK_THRESHOLD: u32 = 400;
+
+    let mut count = 0;
+    for pixel in image.pixels().step_by(120) {
+        if pixel.0[0] > ALMOST_BLACK_THRESHOLD || pixel.0[1] > ALMOST_BLACK_THRESHOLD || pixel.0[2] > ALMOST_BLACK_THRESHOLD {
+            count += 1;
+        }
+        if count > NON_BLANK_THRESHOLD {
+            // debug!("Non blank screen: {}", count);
+            return false;
+        }
+    }
+    // debug!("Blank screen: count: {}", count);
+    return true;
+}
+
 struct Screenshot {
     monitor: i64,
     timestamp: DateTime<Utc>,
@@ -280,9 +286,6 @@ pub fn handle_iss_protocol(app: &AppHandle, request: &http::Request) -> Result<h
     let mut parts = uri[16..].split('/');
     let date = parts.next().unwrap();
     let filename = parts.next().unwrap();
-
-    // let base_dir = Path::new(r"F:\immic-dev"); // TODO use data-dir from setting
-    // let screen_dir = base_dir.join("screen");
 
     let screen_dir = image_dir(app).expect("image_dir is not set");
 
