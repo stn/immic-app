@@ -6,7 +6,7 @@ use tauri::Manager;
 use log::{error,info,warn};
 
 use immic_app::{
-    app::{self, window::show_preferences},
+    app::{self, window::show_settings},
     plugins,
 };
 
@@ -39,7 +39,7 @@ async fn main() {
             app::quit_app,
             app::restart_app,
             app::window::show_main_cmd,
-            app::window::show_preferences_cmd,
+            app::window::show_settings_cmd,
         ])
         .setup(|app| {
             info!("setup");
@@ -57,7 +57,7 @@ async fn main() {
                 if let Err(e) = db.start() {
                     warn!("DB error: {}", e);
 
-                    show_preferences(&app);
+                    show_settings(&app);
 
                     return;
                 }

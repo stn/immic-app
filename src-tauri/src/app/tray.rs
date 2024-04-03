@@ -11,14 +11,14 @@ use crate::app::{
     quit_app,
     window::{
         show_main,
-        show_preferences,
+        show_settings,
     },
 };
 
 pub fn generate_system_tray() -> SystemTray {
     let quit = CustomMenuItem::new("quit".to_string(), "Quit");
     let show = CustomMenuItem::new("show".to_string(), "Show");
-    let preferences = CustomMenuItem::new("preferences".to_string(), "Preferences");
+    let preferences = CustomMenuItem::new("settings".to_string(), "Settings");
     let tray_menu = SystemTrayMenu::new()
         .add_item(show)
         .add_item(preferences)
@@ -38,8 +38,8 @@ pub fn system_tray_event(app: &AppHandle, event: SystemTrayEvent) {
                 "show" => {
                     show_main(&app);
                 }
-                "preferences" => {
-                    show_preferences(&app);
+                "settigns" => {
+                    show_settings(&app);
                 }
                 _ => {}
             }

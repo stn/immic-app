@@ -1,7 +1,6 @@
 import {
   BrowserRouter,
   Route,
-  RouterProvider,
   Routes,
 } from "react-router-dom";
 
@@ -9,7 +8,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 
 import Layout from "./Layout";
 import Dashboard from "../pages/Dashboard";
-import Pref from "../pages/Pref";
+import Settings from "../pages/Settings";
 
 function App() {
   return (
@@ -18,7 +17,7 @@ function App() {
         <Routes>
           <Route element={<Layout />}>
             <Route path="/" element={<Dashboard />} />
-            <Route path="/setting" element={<Pref />} />
+            <Route path="/setting" element={<Settings />} />
           </Route>
         </Routes>
       </BrowserRouter>
