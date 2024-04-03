@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { ApplicationLog, BrowserLog, FileLog } from "../lib/events";
 import { settingGet, settingLoad, showMain } from "../lib/api";
 
-function Dashboard() {
+function MainPanel() {
   const navigate = useNavigate();
 
   const [dataDir, setDataDir] = useState("");
@@ -126,4 +126,4 @@ function Dashboard() {
   );
 }
 
-export default Dashboard;
+export default MainPanel;

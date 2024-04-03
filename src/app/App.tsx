@@ -7,7 +7,7 @@ import {
 import { ThemeProvider } from "@/components/theme-provider";
 
 import Layout from "./Layout";
-import Dashboard from "../pages/Dashboard";
+import MainPanel from "../pages/MainPanel";
 import Settings from "../pages/Settings";
 
 function App() {
@@ -16,7 +16,7 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route element={<Layout />}>
-            <Route path="/" element={<Dashboard />} />
+            <Route path="/" element={<MainPanel />} />
             <Route path="/setting" element={<Settings />} />
           </Route>
         </Routes>
