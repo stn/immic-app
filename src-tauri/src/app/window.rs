@@ -21,8 +21,8 @@ pub fn show_main(app: &AppHandle) {
     }
 }
 
-pub fn show_preferences(app: &AppHandle) {
-    if let Some(window) = app.get_window("preferences") {
+pub fn show_settings(app: &AppHandle) {
+    if let Some(window) = app.get_window("settings") {
         if window.is_minimized().unwrap() {
             window.unminimize().unwrap();
         } else if window.is_visible().unwrap() {
@@ -33,8 +33,8 @@ pub fn show_preferences(app: &AppHandle) {
     } else {
         tauri::WindowBuilder::new(
             app,
-            "preferences".to_string(),
-            tauri::WindowUrl::App("preferences.html".into()),
+            "settings".to_string(),
+            tauri::WindowUrl::App("settings.html".into()),
         ).build().unwrap();
     }
 }
@@ -45,6 +45,6 @@ pub fn show_main_cmd(app: AppHandle) {
 }
 
 #[tauri::command]
-pub fn show_preferences_cmd(app: AppHandle) {
-    show_preferences(&app);
+pub fn show_settings_cmd(app: AppHandle) {
+    show_settings(&app);
 }
