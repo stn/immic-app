@@ -8,8 +8,8 @@ import {
 import { ThemeProvider } from "@/components/theme-provider";
 
 import Layout from "./Layout";
-import Dashboard from "./Dashboard";
-import Pref from "./Pref";
+import Dashboard from "../pages/Dashboard";
+import Pref from "../pages/Pref";
 
 function App() {
   return (

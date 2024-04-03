@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import * as autostart from "tauri-plugin-autostart-api";
 
-import { settingGet, settingLoad, settingSave, settingSet, quitApp } from "./lib";
+import { settingGet, settingLoad, settingSave, settingSet, quitApp } from "../lib/api";
 
 function Pref() {
   const [dataDir, setDataDir] = useState("");
