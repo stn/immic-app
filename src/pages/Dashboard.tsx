@@ -5,8 +5,8 @@ import * as GS from "@tauri-apps/api/globalShortcut";
 
 import { Button } from "@/components/ui/button";
 
-import { ApplicationLog, BrowserLog, FileLog } from "./events";
-import { settingGet, settingLoad, showMain } from "./lib";
+import { ApplicationLog, BrowserLog, FileLog } from "../lib/events";
+import { settingGet, settingLoad, showMain } from "../lib/api";
 
 function Dashboard() {
   const [dates, setDates] = useState<string[]>([]);
