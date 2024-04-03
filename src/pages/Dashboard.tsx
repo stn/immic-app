@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { invoke } from "@tauri-apps/api/tauri";
 import * as GS from "@tauri-apps/api/globalShortcut";
@@ -9,6 +10,9 @@ import { ApplicationLog, BrowserLog, FileLog } from "../lib/events";
 import { settingGet, settingLoad, showMain } from "../lib/api";
 
 function Dashboard() {
+  const navigate = useNavigate();
+
+  const [dataDir, setDataDir] = useState("");
   const [dates, setDates] = useState<string[]>([]);
   const [applications, setApplications] = useState<ApplicationLog[]>([]);
   const [browsers, setBrowsers] = useState<BrowserLog[]>([]);
@@ -38,24 +42,35 @@ function Dashboard() {
   }
 
   useEffect(() => {
-    if (shortcutRegistered) {
-      return;
-    }
-
     let isMounted = true;
-    const loadGlobalShortcut = async () => {
-      await settingLoad();
-      const shortcut = await settingGet<string>("global-shortcut") || "Alt+Shift+K";
-      if (isMounted) {
-        await GS.register(shortcut, () => {
-          showMain();
-        });
-        console.log('registered shortcut: ', shortcut)
-        setGlobalShortcut(shortcut);
-        setShortcutRegistered(true);
+
+    (async () => {
+      // Check if data-dir is set
+      if (dataDir === "") {
+        await settingLoad();
+        const dataDir = await settingGet<string>("data-dir") || "";
+        if (isMounted) {
+          setDataDir(dataDir);
+          if (dataDir === "") {
+            navigate("/setting");
+            return;
+          }
+        }
       }
-    }
-    loadGlobalShortcut();
+
+      // Register global shortcut
+      if (!shortcutRegistered) {
+        const shortcut = await settingGet<string>("global-shortcut") || "Alt+Shift+K";
+        if (isMounted) {
+            await GS.register(shortcut, () => {
+              showMain();
+            });
+            console.log('registered shortcut: ', shortcut)
+            setGlobalShortcut(shortcut);
+            setShortcutRegistered(true);
+        }
+      }
+    })();
 
     return () => {
       isMounted = false;

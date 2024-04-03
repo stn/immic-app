@@ -9,10 +9,7 @@ use tauri::{
 
 use crate::app::{
     quit_app,
-    window::{
-        show_main,
-        show_settings,
-    },
+    window::show_main,
 };
 
 pub fn generate_system_tray() -> SystemTray {
@@ -37,9 +34,6 @@ pub fn system_tray_event(app: &AppHandle, event: SystemTrayEvent) {
                 }
                 "show" => {
                     show_main(&app);
-                }
-                "settigns" => {
-                    show_settings(&app);
                 }
                 _ => {}
             }

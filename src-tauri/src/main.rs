@@ -6,7 +6,7 @@ use tauri::Manager;
 use log::{error,info,warn};
 
 use immic_app::{
-    app::{self, window::show_settings},
+    app,
     plugins,
 };
 
@@ -39,7 +39,6 @@ async fn main() {
             app::quit_app,
             app::restart_app,
             app::window::show_main_cmd,
-            app::window::show_settings_cmd,
         ])
         .setup(|app| {
             info!("setup");
@@ -49,16 +48,12 @@ async fn main() {
             // // Setting plugin
             let setting = app.state::<plugins::setting::SettingPlugin>();
             setting.start().expect("Failed to start setting plugin");
-            // setting::init(app.clone())?;
 
             tokio::spawn(async move {
                 // DB plugin
                 let db = app.state::<plugins::db::ImmicDb>();
                 if let Err(e) = db.start() {
                     warn!("DB error: {}", e);
-
-                    show_settings(&app);
-
                     return;
                 }
                 if let Err(e) = db.migrate().await {

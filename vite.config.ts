@@ -30,7 +30,6 @@ export default defineConfig(async () => ({
     rollupOptions: {
       input: {
         main: resolve( __dirname, 'index.html'),
-        windows: resolve( __dirname , "settings.html"),
       }
     }
   }
