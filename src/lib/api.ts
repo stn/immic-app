@@ -5,6 +5,8 @@ import {
   FileLog,
 } from "./events";
 
+export type Interval = "Hourly" | "Daily" | "Weekly" | "Monthly" | "Yearly";
+
 export async function settingSet(key: string, value: any): Promise<void> {
   return await invoke("plugin:setting|set", { key, value });
 }
@@ -33,18 +35,18 @@ export async function listDates(): Promise<string[]> {
   return await invoke("plugin:immicdb|list_eventlog_dates");
 }
 
-export async function listApplicationLogs(date: string): Promise<ApplicationLog[]> {
-  return await invoke("plugin:application|list_application_logs", { date });
+export async function listApplicationLogs(timestamp: number, interval: Interval): Promise<[string, ApplicationLog[]][]> {
+  return await invoke("plugin:application|list_application_logs", { timestamp, interval });
 }
 
-export async function listBrowserLogs(date: string): Promise<BrowserLog[]> {
-  return await invoke("plugin:browser|list_browser_logs", { date });
+export async function listBrowserLogs(timestamp: number, interval: Interval): Promise<[string, BrowserLog[]][]> {
+  return await invoke("plugin:browser|list_browser_logs", { timestamp, interval });
 }
 
-export async function listFileLogs(date: string): Promise<FileLog[]> {
-  return await invoke("plugin:filelog|list_file_logs", { date });
+export async function listFileLogs(timestamp: number, interval: Interval): Promise<[string, FileLog[]][]> {
+  return await invoke("plugin:filelog|list_file_logs", { timestamp, interval });
 }
 
-export async function listScreenshots(date: string): Promise<string[]> {
-  return await invoke("plugin:screenshot|list_screenshots", { date });
+export async function listScreenshots(timestamp: number, interval: Interval): Promise<[string, string][]> {
+  return await invoke("plugin:screenshot|list_screenshots", { timestamp, interval });
 }

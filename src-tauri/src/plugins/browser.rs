@@ -5,7 +5,7 @@ use actix_web::{
     App, HttpServer,
 };
 use anyhow::{anyhow, Result};
-use chrono::DateTime;
+use chrono::{DateTime, Timelike};
 use log::{debug, error};
 use tauri::{
     plugin::{self, TauriPlugin},
@@ -16,6 +16,8 @@ use crate::plugins::{
     db::ImmicDb,
     setting::SettingPlugin,
 };
+
+use super::db;
 
 const KIND: &str = "browser";
 const SERVER_PORT_SETTING: &str = "server-port";
@@ -108,13 +110,21 @@ impl BrowserPlugin {
         Ok(log_id)
     }
 
-    pub async fn list_browser_logs(&self, date: &str) -> Result<Vec<BrowserLog>> {
-        debug!("list_browsers: date: {}", date);
+    pub async fn list_browser_logs(&self, timestamp: i64, interval: db::Interval) -> Result<Vec<(String, Vec<BrowserLog>)>> {
+        let dt = DateTime::from_timestamp_millis(timestamp);
+        if dt.is_none() {
+            error!("Invalid timestamp: {}", timestamp);
+            return Err(anyhow!("Invalid timestamp"));
+        };
+        let dt = dt.unwrap();
+
+        let local_time = dt.with_timezone(&chrono::Local);
+        let date = local_time.format("%Y%m%d").to_string();
 
         let db = self.app.state::<ImmicDb>();
         let pool = db.pool().await.expect("db pool is not set");
 
-        let browser_logs = sqlx::query_as::<_,
+        let browser_logs: Vec<BrowserLog> = sqlx::query_as::<_,
         (i64, i64, String, String, i64,
         i64, i64, Option<String>, Option<String>, Option<i64>, Option<i64>, Option<i64>)>(
             r#"
@@ -150,10 +160,39 @@ impl BrowserPlugin {
             }
         })
         .collect();
+        // debug!("list_browsers: browser_logs: {:?}", browser_logs);
 
-        debug!("list_browsers: browser_logs: {:?}", browser_logs);
+        match interval {
+            db::Interval::Hourly => {
+                let mut browsers_by_hour = Vec::new();
+                let mut browsers = Vec::new();
 
-        Ok(browser_logs)
+                let mut hour = 0;
+                let mut ts = local_time.with_hour(0).unwrap().with_minute(0).unwrap().with_second(0).unwrap().timestamp();
+                for log in browser_logs {
+                    if log.timestamp >= ts {
+                        if log.timestamp < ts + 3600 {
+                            browsers.push(log);
+                        } else {
+                            if browsers.len() > 0 {
+                                browsers_by_hour.push((hour.to_string(), browsers));
+                                browsers = Vec::new();
+                            }
+                            let dt = DateTime::from_timestamp(log.timestamp, 0).unwrap();
+                            let lt = dt.with_timezone(&chrono::Local);
+                            hour = lt.hour();
+                            ts = local_time.with_hour(hour).unwrap().with_minute(0).unwrap().with_second(0).unwrap().timestamp();
+                            browsers.push(log);
+                        }
+                    }
+                }
+
+                Ok(browsers_by_hour)
+            },
+            _ => {
+                Err(anyhow!("Not implemented yet"))
+            }
+        }
     }
 
     pub async fn get_browser_info(&self, browser_id: i64) -> Result<BrowserInfo> {
@@ -236,8 +275,8 @@ pub struct BrowserInfo {
 }
 
 #[tauri::command]
-pub async fn list_browser_logs(browser: State<'_, BrowserPlugin>, date: String) -> Result<Vec<BrowserLog>, String> {
-    browser.list_browser_logs(&date).await.map_err(|e| e.to_string())
+pub async fn list_browser_logs(browser: State<'_, BrowserPlugin>, timestamp: i64, interval: db::Interval) -> Result<Vec<(String, Vec<BrowserLog>)>, String> {
+    browser.list_browser_logs(timestamp, interval).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]

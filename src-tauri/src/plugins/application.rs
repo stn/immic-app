@@ -1,6 +1,7 @@
 use active_win_pos_rs::get_active_window;
 use anyhow::{anyhow, Result};
-use log::debug;
+use chrono::{DateTime, Timelike, Utc};
+use log::{debug, error};
 use std::sync::{Arc, Mutex};
 use sqlx;
 use tauri::{
@@ -8,7 +9,7 @@ use tauri::{
     AppHandle, Manager, State, Wry,
 };
 
-use crate::plugins::db::ImmicDb;
+use crate::plugins::db;
 
 const KIND: &str = "application";
 
@@ -45,7 +46,7 @@ impl ApplicationPlugin {
         debug!("ApplicationPlugin start");
 
         // Check pool
-        let db = self.app.state::<ImmicDb>();
+        let db = self.app.state::<db::ImmicDb>();
         db.pool().await.unwrap();
 
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
@@ -100,10 +101,10 @@ impl ApplicationPlugin {
     }
 
     async fn insert_win_info(&self, win_info: &WinInfo) -> Result<(i64, i64)> {
-        let timestamp = chrono::Utc::now();
+        let timestamp = Utc::now();
 
         // Insert event_log
-        let db = self.app.state::<ImmicDb>();
+        let db = self.app.state::<db::ImmicDb>();
         let event_id = db.insert_eventlog(timestamp, KIND).await?;
 
         // Search application_info by path
@@ -162,10 +163,10 @@ impl ApplicationPlugin {
     }
 
     async fn insert_win_info_ref(&self, ref_id: i64, info_id: i64) -> Result<i64> {
-        let timestamp = chrono::Utc::now();
+        let timestamp = Utc::now();
 
         // Insert event_log
-        let db = self.app.state::<ImmicDb>();
+        let db = self.app.state::<db::ImmicDb>();
         let event_id = db.insert_eventlog(timestamp, KIND).await?;
 
         let pool = db.pool().await.unwrap();
@@ -188,12 +189,21 @@ impl ApplicationPlugin {
         Ok(log_id)
     }
 
-    pub async fn list_application_logs(&self, date: &str) -> Result<Vec<ApplicationLog>> {
-        debug!("list_application_logs: date: {}", date);
+    pub async fn list_application_logs(&self, timestamp: i64, interval: db::Interval) -> Result<Vec<(String, Vec<ApplicationLog>)>> {
+        let dt = DateTime::from_timestamp_millis(timestamp);
+        if dt.is_none() {
+            error!("Invalid timestamp: {}", timestamp);
+            return Err(anyhow!("Invalid timestamp"));
+        };
+        let dt = dt.unwrap();
 
-        let db = self.app.state::<ImmicDb>();
+        let local_time = dt.with_timezone(&chrono::Local);
+        let date = local_time.format("%Y%m%d").to_string();
+
+        let db = self.app.state::<db::ImmicDb>();
         let pool = db.pool().await.unwrap();
-        let application_logs = sqlx::query_as::<_,
+
+        let application_logs: Vec<ApplicationLog> = sqlx::query_as::<_,
         (i64, i64, String, String, i64,
         i64, i64, Option<i64>, Option<String>, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>)>(
             r#"
@@ -232,16 +242,45 @@ impl ApplicationPlugin {
             }
         })
         .collect();
+        // debug!("list_applications: application_logs: {:?}", application_logs);
 
-        debug!("list_applications: application_logs: {:?}", application_logs);
+        match interval {
+            db::Interval::Hourly => {
+                let mut applications_by_hour = Vec::new();
+                let mut applications = Vec::new();
 
-        Ok(application_logs)
+                let mut hour = 0;
+                let mut ts = local_time.with_hour(0).unwrap().with_minute(0).unwrap().with_second(0).unwrap().timestamp();
+                for log in application_logs {
+                    if log.timestamp >= ts {
+                        if log.timestamp < ts + 3600 {
+                            applications.push(log);
+                        } else {
+                            if applications.len() > 0 {
+                                applications_by_hour.push((hour.to_string(), applications));
+                                applications = Vec::new();
+                            }
+                            let dt = DateTime::from_timestamp(log.timestamp, 0).unwrap();
+                            let lt = dt.with_timezone(&chrono::Local);
+                            hour = lt.hour();
+                            ts = local_time.with_hour(hour).unwrap().with_minute(0).unwrap().with_second(0).unwrap().timestamp();
+                            applications.push(log);
+                        }
+                    }
+                }
+
+                Ok(applications_by_hour)
+            },
+            _ => {
+                Err(anyhow!("Not implemented yet"))
+            }
+        }
     }
 
     pub async fn get_application_info(&self, app_id: i64) -> Result<ApplicationInfo> {
         debug!("get_application_info: app_id={}", app_id);
 
-        let db = self.app.state::<ImmicDb>();
+        let db = self.app.state::<db::ImmicDb>();
         let pool = db.pool().await.unwrap();
         let result = sqlx::query_as::<_, (i64, String, Option<String>)>(
             r#"
@@ -331,8 +370,8 @@ pub struct ApplicationInfo {
 }
 
 #[tauri::command]
-pub async fn list_application_logs(application: State<'_, ApplicationPlugin>, date: String) -> Result<Vec<ApplicationLog>, String> {
-    application.list_application_logs(&date).await.map_err(|e| e.to_string())
+pub async fn list_application_logs(application: State<'_, ApplicationPlugin>, timestamp: i64, interval: db::Interval) -> Result<Vec<(String, Vec<ApplicationLog>)>, String> {
+    application.list_application_logs(timestamp, interval).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]

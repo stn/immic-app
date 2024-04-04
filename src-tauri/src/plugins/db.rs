@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
 use log::debug;
+use serde::{Deserialize, Serialize};
 use std::{
     path::PathBuf,
     sync::Mutex,
@@ -346,7 +347,7 @@ impl ImmicDb {
 
 // EventLog
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Serialize)]
 pub struct EventLog {
     pub id: i64,
     pub timestamp: i64,
@@ -362,4 +363,15 @@ pub async fn list_eventlog_dates(db: State<'_, ImmicDb>) -> Result<Vec<String>, 
 #[tauri::command]
 pub async fn list_eventlog_on(db: State<'_, ImmicDb>, date: String) -> Result<Vec<EventLog>, String> {
     db.list_eventlog_on(date).await.map_err(|e| e.to_string())
+}
+
+// Interval
+
+#[derive(Debug, Deserialize, Serialize)]
+pub enum Interval {
+    Hourly,
+    Daily,
+    Weekly,
+    Monthly,
+    Yearly,
 }

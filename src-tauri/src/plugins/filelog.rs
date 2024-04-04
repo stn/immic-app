@@ -1,4 +1,5 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
+use chrono::{DateTime, Timelike, Utc};
 use log::{debug, error, info};
 use notify_debouncer_full::{
     notify::{self, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher},
@@ -210,7 +211,7 @@ impl FilelogPlugin {
     }
 
     async fn insert_info(&self, info: &FileEventInfo) -> Result<i64> {
-        let timestamp = chrono::Utc::now();
+        let timestamp = Utc::now();
 
         let db = self.app.state::<db::ImmicDb>();
         let event_id = db.insert_eventlog(timestamp, KIND).await?;
@@ -266,13 +267,21 @@ impl FilelogPlugin {
         Ok(log_id)
     }
 
-    pub async fn list_file_logs(&self, date: &str) -> Result<Vec<FileLog>> {
-        debug!("list_filelogs: date: {}", date);
+    pub async fn list_file_logs(&self, timestamp: i64, interval: db::Interval) -> Result<Vec<(String, Vec<FileLog>)>> {
+        let dt = DateTime::from_timestamp_millis(timestamp);
+        if dt.is_none() {
+            error!("Invalid timestamp: {}", timestamp);
+            return Err(anyhow!("Invalid timestamp"));
+        };
+        let dt = dt.unwrap();
+
+        let local_time = dt.with_timezone(&chrono::Local);
+        let date = local_time.format("%Y%m%d").to_string();
 
         let db = self.app.state::<db::ImmicDb>();
         let pool = db.pool().await.expect("db pool is not set");
 
-        let filelogs = sqlx::query_as::<_,
+        let filelogs: Vec<FileLog> = sqlx::query_as::<_,
             (i64, i64, String, String, i64,
             i64, i64, Option<String>)
         >(
@@ -306,10 +315,39 @@ impl FilelogPlugin {
             }
         })
         .collect();
+        // debug!("list_filelogs: filelogs: {:?}", filelogs);
 
-        debug!("list_filelogs: filelogs: {:?}", filelogs);
-        
-        Ok(filelogs)
+        match interval {
+            db::Interval::Hourly => {
+                let mut filelogs_by_hour = Vec::new();
+                let mut logs = Vec::new();
+
+                let mut hour = 0;
+                let mut ts = local_time.with_hour(0).unwrap().with_minute(0).unwrap().with_second(0).unwrap().timestamp();
+                for log in filelogs {
+                    if log.timestamp >= ts {
+                        if log.timestamp < ts + 3600 {
+                            logs.push(log);
+                        } else {
+                            if logs.len() > 0 {
+                                filelogs_by_hour.push((hour.to_string(), logs));
+                                logs = Vec::new();
+                            }
+                            let dt = DateTime::from_timestamp(log.timestamp, 0).unwrap();
+                            let lt = dt.with_timezone(&chrono::Local);
+                            hour = lt.hour();
+                            ts = local_time.with_hour(hour).unwrap().with_minute(0).unwrap().with_second(0).unwrap().timestamp();
+                            logs.push(log);
+                        }
+                    }
+                }
+
+                Ok(filelogs_by_hour)
+            },
+            _ => {
+                Err(anyhow!("Not implemented yet"))
+            }
+        }
     }
 
     pub async fn get_file_info(&self, file_id: i64) -> Result<FileInfo> {
@@ -443,8 +481,8 @@ pub struct FileInfo {
 }
 
 #[tauri::command]
-pub async fn list_file_logs(file_log: State<'_, FilelogPlugin>, date: String) -> Result<Vec<FileLog>, String> {
-    file_log.list_file_logs(&date).await.map_err(|e| e.to_string())
+pub async fn list_file_logs(file_log: State<'_, FilelogPlugin>, timestamp: i64, interval: db::Interval) -> Result<Vec<(String, Vec<FileLog>)>, String> {
+    file_log.list_file_logs(timestamp, interval).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]

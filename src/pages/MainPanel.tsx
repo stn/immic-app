@@ -4,13 +4,12 @@ import { useNavigate } from "react-router-dom";
 import * as GS from "@tauri-apps/api/globalShortcut";
 
 import { settingGet, settingLoad, showMain } from "../lib/api";
-import { DailyView } from "./DailyView";
+import { TimelineView } from "./TimelineView";
 
 function MainPanel() {
   const navigate = useNavigate();
 
   const [dataDir, setDataDir] = useState("");
-  const [date, setDate] = useState<string>();
   const [globalShortcut, setGlobalShortcut] = useState<string>();
   const [shortcutRegistered, setShortcutRegistered] = useState<boolean>(false);
 
@@ -44,9 +43,6 @@ function MainPanel() {
         }
       }
 
-      let date = new Date().toISOString().split('T')[0];
-      date = date.replace(/-/g, '');
-      setDate(date);
     })();
 
     return () => {
@@ -57,7 +53,7 @@ function MainPanel() {
 
   return (
     <div>
-      { date && <DailyView date={date} /> }
+      <TimelineView />
     </div>
   );
 }
