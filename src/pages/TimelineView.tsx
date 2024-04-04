@@ -7,6 +7,7 @@ import {
   listFileLogs,
   listScreenshots,
 } from "../lib/api";
+import type { Interval } from "../lib/api";
 
 export interface TimelineViewProps {
   timestamp?: number;
@@ -14,11 +15,9 @@ export interface TimelineViewProps {
 
 export function TimelineView(props: TimelineViewProps) {
   const [timestamp, setTimestamp] = useState<number>(props.timestamp || Date.now());
+  const [interval, setInterval] = useState<Interval>("Hourly");
   const [date, setDate] = useState<string>("");
-  const [applications, setApplications] = useState<[string, ApplicationLog[]][]>();
-  const [browsers, setBrowsers] = useState<[string, BrowserLog[]][]>();
-  const [filelogs, setFilelogs] = useState<[string, FileLog[]][]>();
-  const [screens, setScreens] = useState<[string, string][]>();
+  const [timeline, setTimeline] = useState<[string, [string, ApplicationLog[], BrowserLog[], FileLog[]]][]>();
 
   useEffect(() => {
     if (date === "") {
@@ -32,15 +31,19 @@ export function TimelineView(props: TimelineViewProps) {
     let isMounted = true;
     
     (async () => {
-      let applicationLogs = await listApplicationLogs(timestamp, "Hourly");
-      let browserLogs = await listBrowserLogs(timestamp, "Hourly");
-      let fileLogs = await listFileLogs(timestamp, "Hourly");
-      let screenshots = await listScreenshots(timestamp, "Hourly");
+      let applicationLogs = new Map(await listApplicationLogs(timestamp, interval));
+      let browserLogs = new Map(await listBrowserLogs(timestamp, interval));
+      let fileLogs = new Map(await listFileLogs(timestamp, interval));
+      let screenshots = new Map(await listScreenshots(timestamp, interval));
       if (isMounted) {
-        setApplications(applicationLogs);
-        setBrowsers(browserLogs);
-        setFilelogs(fileLogs);
-        setScreens(screenshots);
+        let hours = Array.from(new Set([...applicationLogs.keys(), ...browserLogs.keys(), ...fileLogs.keys(), ...screenshots.keys()])).sort();
+        setTimeline(hours.map((hour) => {
+          let apps = applicationLogs.get(hour) || [];
+          let brs = browserLogs.get(hour) || [];
+          let fls = fileLogs.get(hour) || [];
+          let scr = screenshots.get(hour) || "";
+          return [hour, [scr, apps, brs, fls]];
+        }));
       }
     })();
 
@@ -55,46 +58,25 @@ export function TimelineView(props: TimelineViewProps) {
         {date}
       </h1>
       <div>
-        {applications && applications.map(([hour, apps]) => (
-          <div key={hour}>
-            <h2>{hour}</h2>
-            <div>
-              {apps.map((app) => (
-                <div key={app.id}>{app.id}: {JSON.stringify(app)}</div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-      <div>
-        {browsers && browsers.map(([hour, bs]) => (
-          <div key={hour}>
-            <h2>{hour}</h2>
-            <div>
-              {bs.map((browser) => (
-                <div key={browser.id}>{browser.id}: {JSON.stringify(browser)}</div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-      <div>
-        {filelogs && filelogs.map(([hour, logs]) => (
-          <div key={hour}>
-            <h2>{hour}</h2>
-            <div>
-              {logs.map((filelog) => (
-                <div key={filelog.id}>{filelog.id}: {JSON.stringify(filelog)}</div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-      <div>
-        {screens && screens.map(([hour, screen]) => (
+        { timeline && timeline.map(([hour, [screen, applications, browsers, filelogs]]) => (
           <div key={hour}>
             <h2>{hour}</h2>
             <img key={hour} src={'https://iss.localhost/' + screen + '-t'} alt={screen} />
+            <div>
+              {applications.map((app) => (
+                <div key={app.id}>{app.id}: {JSON.stringify(app)}</div>
+              ))}
+            </div>
+            <div>
+              {browsers.map((browser) => (
+                <div key={browser.id}>{browser.id}: {JSON.stringify(browser)}</div>
+              ))}
+            </div>
+            <div>
+              {filelogs.map((filelog) => (
+                <div key={filelog.id}>{filelog.id}: {JSON.stringify(filelog)}</div>
+              ))}
+            </div>
           </div>
         ))}
       </div>
