@@ -252,21 +252,22 @@ impl ApplicationPlugin {
                 let mut hour = 0;
                 let mut ts = local_time.with_hour(0).unwrap().with_minute(0).unwrap().with_second(0).unwrap().timestamp();
                 for log in application_logs {
-                    if log.timestamp >= ts {
-                        if log.timestamp < ts + 3600 {
-                            applications.push(log);
-                        } else {
-                            if applications.len() > 0 {
-                                applications_by_hour.push((hour.to_string(), applications));
-                                applications = Vec::new();
-                            }
-                            let dt = DateTime::from_timestamp(log.timestamp, 0).unwrap();
-                            let lt = dt.with_timezone(&chrono::Local);
-                            hour = lt.hour();
-                            ts = local_time.with_hour(hour).unwrap().with_minute(0).unwrap().with_second(0).unwrap().timestamp();
-                            applications.push(log);
+                    if log.timestamp < ts + 3600 {
+                        applications.push(log);
+                    } else {
+                        if applications.len() > 0 {
+                            applications_by_hour.push((hour.to_string(), applications));
+                            applications = Vec::new();
                         }
+                        let dt = DateTime::from_timestamp(log.timestamp, 0).unwrap();
+                        let lt = dt.with_timezone(&chrono::Local);
+                        hour = lt.hour();
+                        ts = local_time.with_hour(hour).unwrap().with_minute(0).unwrap().with_second(0).unwrap().timestamp();
+                        applications.push(log);
                     }
+                }
+                if applications.len() > 0 {
+                    applications_by_hour.push((hour.to_string(), applications));
                 }
 
                 Ok(applications_by_hour)

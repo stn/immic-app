@@ -170,21 +170,22 @@ impl BrowserPlugin {
                 let mut hour = 0;
                 let mut ts = local_time.with_hour(0).unwrap().with_minute(0).unwrap().with_second(0).unwrap().timestamp();
                 for log in browser_logs {
-                    if log.timestamp >= ts {
-                        if log.timestamp < ts + 3600 {
-                            browsers.push(log);
-                        } else {
-                            if browsers.len() > 0 {
-                                browsers_by_hour.push((hour.to_string(), browsers));
-                                browsers = Vec::new();
-                            }
-                            let dt = DateTime::from_timestamp(log.timestamp, 0).unwrap();
-                            let lt = dt.with_timezone(&chrono::Local);
-                            hour = lt.hour();
-                            ts = local_time.with_hour(hour).unwrap().with_minute(0).unwrap().with_second(0).unwrap().timestamp();
-                            browsers.push(log);
+                    if log.timestamp < ts + 3600 {
+                        browsers.push(log);
+                    } else {
+                        if browsers.len() > 0 {
+                            browsers_by_hour.push((hour.to_string(), browsers));
+                            browsers = Vec::new();
                         }
+                        let dt = DateTime::from_timestamp(log.timestamp, 0).unwrap();
+                        let lt = dt.with_timezone(&chrono::Local);
+                        hour = lt.hour();
+                        ts = local_time.with_hour(hour).unwrap().with_minute(0).unwrap().with_second(0).unwrap().timestamp();
+                        browsers.push(log);
                     }
+                }
+                if browsers.len() > 0 {
+                    browsers_by_hour.push((hour.to_string(), browsers));
                 }
 
                 Ok(browsers_by_hour)

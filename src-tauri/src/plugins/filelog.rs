@@ -277,6 +277,7 @@ impl FilelogPlugin {
 
         let local_time = dt.with_timezone(&chrono::Local);
         let date = local_time.format("%Y%m%d").to_string();
+        // debug!("list_filelogs: date: {}", date);
 
         let db = self.app.state::<db::ImmicDb>();
         let pool = db.pool().await.expect("db pool is not set");
@@ -288,7 +289,7 @@ impl FilelogPlugin {
             r#"
             SELECT
             e.id, e.timestamp, e.date, e.kind, e.log_id,
-            f.id, f.indo_id, f.kind
+            f.id, f.info_id, f.kind
             FROM event_log e
             INNER JOIN file_log f ON e.log_id = f.id
             WHERE e.kind = ? AND e.date = ?
@@ -325,21 +326,22 @@ impl FilelogPlugin {
                 let mut hour = 0;
                 let mut ts = local_time.with_hour(0).unwrap().with_minute(0).unwrap().with_second(0).unwrap().timestamp();
                 for log in filelogs {
-                    if log.timestamp >= ts {
-                        if log.timestamp < ts + 3600 {
-                            logs.push(log);
-                        } else {
-                            if logs.len() > 0 {
-                                filelogs_by_hour.push((hour.to_string(), logs));
-                                logs = Vec::new();
-                            }
-                            let dt = DateTime::from_timestamp(log.timestamp, 0).unwrap();
-                            let lt = dt.with_timezone(&chrono::Local);
-                            hour = lt.hour();
-                            ts = local_time.with_hour(hour).unwrap().with_minute(0).unwrap().with_second(0).unwrap().timestamp();
-                            logs.push(log);
+                    if log.timestamp < ts + 3600 {
+                        logs.push(log);
+                    } else {
+                        if logs.len() > 0 {
+                            filelogs_by_hour.push((hour.to_string(), logs));
+                            logs = Vec::new();
                         }
+                        let dt = DateTime::from_timestamp(log.timestamp, 0).unwrap();
+                        let lt = dt.with_timezone(&chrono::Local);
+                        hour = lt.hour();
+                        ts = local_time.with_hour(hour).unwrap().with_minute(0).unwrap().with_second(0).unwrap().timestamp();
+                        logs.push(log);
                     }
+                }
+                if logs.len() > 0 {
+                    filelogs_by_hour.push((hour.to_string(), logs));
                 }
 
                 Ok(filelogs_by_hour)

@@ -60,22 +60,36 @@ export function TimelineView(props: TimelineViewProps) {
       <div>
         { timeline && timeline.map(([hour, [screen, applications, browsers, filelogs]]) => (
           <div key={hour}>
-            <h2>{hour}</h2>
-            <img key={hour} src={'https://iss.localhost/' + screen + '-t'} alt={screen} />
-            <div>
-              {applications.map((app) => (
-                <div key={app.id}>{app.id}: {JSON.stringify(app)}</div>
-              ))}
-            </div>
-            <div>
-              {browsers.map((browser) => (
-                <div key={browser.id}>{browser.id}: {JSON.stringify(browser)}</div>
-              ))}
-            </div>
-            <div>
-              {filelogs.map((filelog) => (
-                <div key={filelog.id}>{filelog.id}: {JSON.stringify(filelog)}</div>
-              ))}
+            <h2 className="text-4xl font-semibold">
+              {hour}:00
+            </h2>
+            <div className="flex flex-col gap-4">
+              <div>
+                <img key={hour} src={'https://iss.localhost/' + screen + '-t'} alt={screen} />
+              </div>
+              <div>
+                {applications.map((app) => (
+                  <div key={app.id}>
+                    {app.title}
+                    {/* {app.id}: {JSON.stringify(app)} */}
+                  </div>
+                ))}
+              </div>
+              <div>
+                {browsers.map((browser) => (
+                  <div key={browser.id}>
+                    {browser.title}
+                    {/* {browser.id}: {JSON.stringify(browser)} */}
+                  </div>
+                ))}
+              </div>
+              <div>
+                {filelogs.map((filelog) => (
+                  <div key={filelog.id}>
+                    {filelog.id}: {JSON.stringify(filelog)}
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         ))}
