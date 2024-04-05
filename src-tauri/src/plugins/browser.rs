@@ -5,7 +5,7 @@ use actix_web::{
     App, HttpServer,
 };
 use anyhow::{anyhow, Result};
-use chrono::{DateTime, Timelike};
+use chrono::DateTime;
 use log::{debug, error};
 use tauri::{
     plugin::{self, TauriPlugin},
@@ -172,38 +172,7 @@ impl BrowserPlugin {
         .collect();
         // debug!("list_browsers: browser_logs: {:?}", browser_logs);
 
-        match interval {
-            db::Interval::Hourly => {
-                let mut browsers_by_hour = Vec::new();
-                let mut browsers = Vec::new();
-
-                let mut hour = 0;
-                let mut ts = local_time.with_hour(0).unwrap().with_minute(0).unwrap().with_second(0).unwrap().timestamp();
-                for log in browser_logs {
-                    if log.timestamp < ts + 3600 {
-                        browsers.push(log);
-                    } else {
-                        if browsers.len() > 0 {
-                            browsers_by_hour.push((hour.to_string(), browsers));
-                            browsers = Vec::new();
-                        }
-                        let dt = DateTime::from_timestamp(log.timestamp, 0).unwrap();
-                        let lt = dt.with_timezone(&chrono::Local);
-                        hour = lt.hour();
-                        ts = local_time.with_hour(hour).unwrap().with_minute(0).unwrap().with_second(0).unwrap().timestamp();
-                        browsers.push(log);
-                    }
-                }
-                if browsers.len() > 0 {
-                    browsers_by_hour.push((hour.to_string(), browsers));
-                }
-
-                Ok(browsers_by_hour)
-            },
-            _ => {
-                Err(anyhow!("Not implemented yet"))
-            }
-        }
+        db::partition_logs(browser_logs, &local_time, interval)
     }
 
     pub async fn get_browser_info(&self, browser_id: i64) -> Result<BrowserInfo> {
@@ -279,6 +248,12 @@ pub struct BrowserLog {
     pub tab_id: Option<i64>,
     pub opener_tab_id: Option<i64>,
     pub window_id: Option<i64>,
+}
+
+impl db::Timestamp for BrowserLog {
+    fn timestamp(&self) -> i64 {
+        self.timestamp
+    }
 }
 
 #[derive(Debug, serde::Serialize)]

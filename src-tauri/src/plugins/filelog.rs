@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use chrono::{DateTime, Timelike, Utc};
+use chrono::{DateTime, Utc};
 use log::{debug, error, info};
 use notify_debouncer_full::{
     notify::{self, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher},
@@ -325,38 +325,7 @@ impl FilelogPlugin {
         .collect();
         // debug!("list_filelogs: filelogs: {:?}", filelogs);
 
-        match interval {
-            db::Interval::Hourly => {
-                let mut filelogs_by_hour = Vec::new();
-                let mut logs = Vec::new();
-
-                let mut hour = 0;
-                let mut ts = local_time.with_hour(0).unwrap().with_minute(0).unwrap().with_second(0).unwrap().timestamp();
-                for log in filelogs {
-                    if log.timestamp < ts + 3600 {
-                        logs.push(log);
-                    } else {
-                        if logs.len() > 0 {
-                            filelogs_by_hour.push((hour.to_string(), logs));
-                            logs = Vec::new();
-                        }
-                        let dt = DateTime::from_timestamp(log.timestamp, 0).unwrap();
-                        let lt = dt.with_timezone(&chrono::Local);
-                        hour = lt.hour();
-                        ts = local_time.with_hour(hour).unwrap().with_minute(0).unwrap().with_second(0).unwrap().timestamp();
-                        logs.push(log);
-                    }
-                }
-                if logs.len() > 0 {
-                    filelogs_by_hour.push((hour.to_string(), logs));
-                }
-
-                Ok(filelogs_by_hour)
-            },
-            _ => {
-                Err(anyhow!("Not implemented yet"))
-            }
-        }
+        db::partition_logs(filelogs, &local_time, interval)
     }
 
     pub async fn get_file_info(&self, file_id: i64) -> Result<FileInfo> {
@@ -483,6 +452,12 @@ pub struct FileLog {
     pub info_id: i64,
     pub path: String,
     pub kind: Option<String>,
+}
+
+impl db::Timestamp for FileLog {
+    fn timestamp(&self) -> i64 {
+        self.timestamp
+    }
 }
 
 #[derive(Debug, serde::Serialize)]

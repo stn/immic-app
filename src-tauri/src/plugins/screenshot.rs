@@ -217,7 +217,7 @@ impl ScreenshotPlugin {
                         let local_time = dt.with_timezone(&chrono::Local);
                         let hour = local_time.hour();
                         let filename = format!("{}/{}-{}", dt.format("%Y%m%d"), dt.format("%H%M%S"), log.monitor_id);
-                        screenshots.push((hour.to_string(), filename));
+                        screenshots.push((format!("{hour:02}"), filename));
                         if hour == 23 {
                             break;
                         }
@@ -297,6 +297,12 @@ pub struct ScreenshotLog {
     pub timestamp: i64,
     pub date: String,
     pub monitor_id: i64,
+}
+
+impl db::Timestamp for ScreenshotLog {
+    fn timestamp(&self) -> i64 {
+        self.timestamp
+    }
 }
 
 pub fn handle_iss_protocol(app: &AppHandle, request: &http::Request) -> Result<http::Response, Box<dyn Error>> {

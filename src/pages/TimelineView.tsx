@@ -1,12 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { ApplicationLog, BrowserLog, FileLog } from "../lib/events";
-import {
-  listApplicationLogs,
-  listBrowserLogs,
-  listFileLogs,
-  listScreenshots,
-} from "../lib/api";
+import { listTimeline } from "../lib/api";
 import type { Interval } from "../lib/api";
 
 export interface TimelineViewProps {
@@ -31,19 +26,9 @@ export function TimelineView(props: TimelineViewProps) {
     let isMounted = true;
     
     (async () => {
-      let applicationLogs = new Map(await listApplicationLogs(timestamp, interval));
-      let browserLogs = new Map(await listBrowserLogs(timestamp, interval));
-      let fileLogs = new Map(await listFileLogs(timestamp, interval));
-      let screenshots = new Map(await listScreenshots(timestamp, interval));
+      let logs = await listTimeline(timestamp, interval);
       if (isMounted) {
-        let hours = Array.from(new Set([...applicationLogs.keys(), ...browserLogs.keys(), ...fileLogs.keys(), ...screenshots.keys()])).sort();
-        setTimeline(hours.map((hour) => {
-          let apps = applicationLogs.get(hour) || [];
-          let brs = browserLogs.get(hour) || [];
-          let fls = fileLogs.get(hour) || [];
-          let scr = screenshots.get(hour) || "";
-          return [hour, [scr, apps, brs, fls]];
-        }));
+        setTimeline(logs);
       }
     })();
 
