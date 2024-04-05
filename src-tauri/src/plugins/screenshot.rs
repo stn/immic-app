@@ -112,8 +112,8 @@ impl ScreenshotPlugin {
                 debug!("Blank screen: monitor: {}", screenshot.monitor);
                 break;
             }
-            self.insert_screenshot_log(&screenshot).await?;
             self.save_screenshot(&screenshot).await?;
+            self.insert_screenshot_log(&screenshot).await?;
 
             break; // save only the first screen for now
         }

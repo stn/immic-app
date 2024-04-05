@@ -105,10 +105,12 @@ export function TimelineView(props: TimelineViewProps) {
                 </h2>
                 <div className="grid grid-cols-4 gap-4">
                   <div className="mr-4">
-                    <img key={hour}
-                      src={'https://iss.localhost/' + screen + '-t'}
-                      alt={`screenshot ${hour}`}
-                      />
+                    { screen !== "" && (
+                      <img key={hour}
+                        src={'https://iss.localhost/' + screen + '-t'}
+                        alt={`screenshot ${hour}`}
+                        />
+                    )}
                   </div>
                   <div className="w-96">
                     {applications.map((app) => (
