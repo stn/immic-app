@@ -78,12 +78,14 @@ export function TimelineView(props: TimelineViewProps) {
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger>
-                            {/* <img src={browser.fav_icon_url} alt="favicon" /> */}
-                            <a href={browser.url} target="_blank" rel="noopener noreferrer"
-                              className="decoration-1 underline-offset-2 hover:underline"
-                            >
-                              {browser.title}
-                            </a>
+                            <div className="text-left">
+                              {/* <img src={browser.fav_icon_url} alt="favicon" /> */}
+                              <a href={browser.url} target="_blank" rel="noopener noreferrer"
+                                className="decoration-1 underline-offset-2 hover:underline"
+                              >
+                                {browser.title}
+                              </a>
+                            </div>
                           </TooltipTrigger>
                           <TooltipContent side="bottom">
                             {browser.url}
