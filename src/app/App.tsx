@@ -3,6 +3,8 @@ import {
   Route,
   Routes,
 } from "react-router-dom";
+import { useKey } from "react-use";
+import { appWindow } from '@tauri-apps/api/window';
 
 import { ThemeProvider } from "@/components/theme-provider";
 
@@ -11,6 +13,8 @@ import MainPanel from "../pages/MainPanel";
 import Settings from "../pages/Settings";
 
 function App() {
+  useKey("Escape", () => { appWindow.hide(); })
+
   return (
     <ThemeProvider defaultTheme="dark" storageKey="ui-theme">
       <BrowserRouter>

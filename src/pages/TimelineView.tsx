@@ -40,7 +40,6 @@ export function TimelineView(props: TimelineViewProps) {
   }
 
   useEffect(() => {
-    console.log(timestamp);
     if (date === "") {
       let d = new Date(timestamp).toISOString().split('T')[0];
       d = d.replace(/-/g, '');

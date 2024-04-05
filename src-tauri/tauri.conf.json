@@ -26,7 +26,8 @@
         "exit": true
       },
       "window": {
-        "create": true
+        "create": true,
+        "hide": true
       }
     },
     "bundle": {
@@ -56,7 +57,7 @@
         "label": "main",
         "fullscreen": false,
         "resizable": true,
-        "title": "immic-app",
+        "title": "immic-app-dev",
         "width": 2200,
         "height": 900
       }
