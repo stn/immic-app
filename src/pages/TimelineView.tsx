@@ -1,5 +1,12 @@
 import { useEffect, useState } from "react";
 
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+
 import { ApplicationLog, BrowserLog, FileLog } from "../lib/events";
 import { listTimeline } from "../lib/api";
 import type { Interval } from "../lib/api";
@@ -68,12 +75,21 @@ export function TimelineView(props: TimelineViewProps) {
                 <ul className="list-disc">
                   {browsers.map((browser) => (
                     <li key={browser.id}>
-                      {/* <img src={browser.fav_icon_url} alt="favicon" /> */}
-                      <a href={browser.url} target="_blank" rel="noopener noreferrer"
-                        className="decoration-1 underline-offset-2 hover:underline"
-                      >
-                        {browser.title}
-                      </a>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger>
+                            {/* <img src={browser.fav_icon_url} alt="favicon" /> */}
+                            <a href={browser.url} target="_blank" rel="noopener noreferrer"
+                              className="decoration-1 underline-offset-2 hover:underline"
+                            >
+                              {browser.title}
+                            </a>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom">
+                            {browser.url}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                       {/* {JSON.stringify(browser)} */}
                     </li>
                   ))}
