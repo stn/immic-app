@@ -32,8 +32,11 @@ export type BrowserLog = {
     id: number
     event_id: number
     timestamp: number
+    timeframe: number
     date: string
     info_id: number
+    url: string
+    fav_icon_url?: string
     title?: string
     referrer?: string
     tab_id?: number
