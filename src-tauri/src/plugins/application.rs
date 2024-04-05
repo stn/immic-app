@@ -203,42 +203,50 @@ impl ApplicationPlugin {
         let db = self.app.state::<db::ImmicDb>();
         let pool = db.pool().await.unwrap();
 
-        let application_logs: Vec<ApplicationLog> = sqlx::query_as::<_,
-        (i64, i64, String, String, i64,
-        i64, i64, Option<i64>, Option<String>, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>)>(
+        let application_logs: Vec<ApplicationLog> = sqlx::query_as::<_, (
+            i64, i64, i64,
+            i64, Option<i64>, Option<String>, Option<i64>, Option<i64>, Option<i64>, Option<i64>,
+            i64, String, Option<String>,
+        )>(
             r#"
             SELECT
-            e.id, e.timestamp, e.date, e.kind, e.log_id,
-            a.id, a.info_id, a.process_id, a.title, a.x, a.y, a.width, a.height, a.ref_id
+            e.id, e.timestamp, e.timeframe,
+            a.id, a.process_id, a.title, a.x, a.y, a.width, a.height,
+            i.id, i.name, i.path
             FROM event_log e
             INNER JOIN application_log a ON e.log_id = a.id
-            WHERE e.kind = ? AND e.date = ?
+            INNER JOIN application_info i ON a.info_id = i.id
+            WHERE e.kind = "application" AND e.date = "20240405"
             ORDER BY e.timestamp
             "#
         )
         .bind(KIND)
-        .bind(date)
+        .bind(&date)
         .fetch_all(&pool)
         .await
         .unwrap_or(Vec::new())
         .iter()
         .map(|row| {
-            let (event_id, timestamp, date, _kind, _log_id,
-                id, info_id, process_id, title, x, y, width, height, ref_id
-                ) = row;
+            let (
+                event_id, timestamp, timeframe,
+                id, process_id, title, x, y, width, height,
+                info_id, name, path,
+            ) = row;
             ApplicationLog {
                 id: *id,
                 event_id: *event_id,
                 timestamp: *timestamp,
+                timeframe: *timeframe,
                 date: date.clone(),
                 info_id: *info_id,
+                name: name.clone(),
+                path: path.clone(),
                 process_id: *process_id,
                 title: title.clone(),
                 x: *x,
                 y: *y,
                 width: *width,
                 height: *height,
-                ref_id: *ref_id,
             }
         })
         .collect();
@@ -352,15 +360,17 @@ pub struct ApplicationLog {
     pub id: i64,
     pub event_id: i64,
     pub timestamp: i64,
+    pub timeframe: i64,
     pub date: String,
     pub info_id: i64,
+    pub name: String,
+    pub path: Option<String>,
     pub process_id: Option<i64>,
     pub title: Option<String>,
     pub x: Option<i64>,
     pub y: Option<i64>,
     pub width: Option<i64>,
     pub height: Option<i64>,
-    pub ref_id: Option<i64>,
 }
 
 #[derive(Debug, serde::Serialize)]
