@@ -9,15 +9,17 @@ export type ApplicationLog = {
     id: number
     event_id: number
     timestamp: number
+    timeframe: number
     date: string
     info_id: number
+    name: string
+    path?: string
     process_id?: number
     title?: string
     x?: number
     y?: number
     width?: number
     height?: number
-    ref_id?: number
 }
 
 export type ApplicationInfo = {

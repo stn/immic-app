@@ -75,7 +75,7 @@ export function TimelineView(props: TimelineViewProps) {
               <div className="w-96">
                 {applications.map((app) => (
                   <div key={app.id}>
-                    {app.title}
+                    [{app.name}] {app.title}
                     {/* {app.id}: {JSON.stringify(app)} */}
                   </div>
                 ))}
