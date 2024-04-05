@@ -1,6 +1,6 @@
 use active_win_pos_rs::get_active_window;
 use anyhow::{anyhow, Result};
-use chrono::{DateTime, Timelike, Utc};
+use chrono::{DateTime, Utc};
 use log::{debug, error};
 use std::sync::{Arc, Mutex};
 use sqlx;
@@ -252,38 +252,7 @@ impl ApplicationPlugin {
         .collect();
         // debug!("list_applications: application_logs: {:?}", application_logs);
 
-        match interval {
-            db::Interval::Hourly => {
-                let mut applications_by_hour = Vec::new();
-                let mut applications = Vec::new();
-
-                let mut hour = 0;
-                let mut ts = local_time.with_hour(0).unwrap().with_minute(0).unwrap().with_second(0).unwrap().timestamp();
-                for log in application_logs {
-                    if log.timestamp < ts + 3600 {
-                        applications.push(log);
-                    } else {
-                        if applications.len() > 0 {
-                            applications_by_hour.push((hour.to_string(), applications));
-                            applications = Vec::new();
-                        }
-                        let dt = DateTime::from_timestamp(log.timestamp, 0).unwrap();
-                        let lt = dt.with_timezone(&chrono::Local);
-                        hour = lt.hour();
-                        ts = local_time.with_hour(hour).unwrap().with_minute(0).unwrap().with_second(0).unwrap().timestamp();
-                        applications.push(log);
-                    }
-                }
-                if applications.len() > 0 {
-                    applications_by_hour.push((hour.to_string(), applications));
-                }
-
-                Ok(applications_by_hour)
-            },
-            _ => {
-                Err(anyhow!("Not implemented yet"))
-            }
-        }
+        db::partition_logs(application_logs, &local_time, interval)
     }
 
     pub async fn get_application_info(&self, app_id: i64) -> Result<ApplicationInfo> {
@@ -371,6 +340,12 @@ pub struct ApplicationLog {
     pub y: Option<i64>,
     pub width: Option<i64>,
     pub height: Option<i64>,
+}
+
+impl db::Timestamp for ApplicationLog {
+    fn timestamp(&self) -> i64 {
+        self.timestamp
+    }
 }
 
 #[derive(Debug, serde::Serialize)]

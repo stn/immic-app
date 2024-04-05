@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Local, Timelike, Utc};
 use log::debug;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -375,3 +375,71 @@ pub enum Interval {
     Monthly,
     Yearly,
 }
+
+pub trait Timestamp {
+    fn timestamp(&self) -> i64;
+}
+
+pub fn partition_logs<T: Timestamp>(logs: Vec<T>, local_time: &DateTime<Local>, interval: Interval) -> Result<Vec<(String, Vec<T>)>> {
+    match interval {
+        Interval::Hourly => {
+            let mut ret = Vec::new();
+            let mut ls = Vec::new();
+
+            let mut hour = 0;
+            let mut ts = local_time.with_hour(0).unwrap().with_minute(0).unwrap().with_second(0).unwrap().timestamp();
+            for log in logs {
+                let log_timestamp = log.timestamp();
+                if log_timestamp < ts + 3600 {
+                    ls.push(log);
+                } else {
+                    if ls.len() > 0 {
+                        ret.push((format!("{hour:02}"), ls));
+                        ls = Vec::new();
+                    }
+                    let dt = DateTime::from_timestamp(log_timestamp, 0).unwrap();
+                    let lt = dt.with_timezone(&chrono::Local);
+                    hour = lt.hour();
+                    ts = local_time.with_hour(hour).unwrap().with_minute(0).unwrap().with_second(0).unwrap().timestamp();
+                    ls.push(log);
+                }
+            }
+            if ls.len() > 0 {
+                ret.push((format!("{hour:02}"), ls));
+            }
+
+            Ok(ret)
+        },
+        _ => {
+            Err(anyhow!("Not implemented yet"))
+        }
+    }
+}
+
+// pub fn first_logs<T: Timestamp>(logs: Vec<T>, local_time: &DateTime<Local>, interval: Interval) -> Result<Vec<(String, T)>> {
+//     match interval {
+//         Interval::Hourly => {
+//             let mut ret = Vec::new();
+
+//             let mut ts = local_time.with_hour(0).unwrap().with_minute(0).unwrap().with_second(0).unwrap().timestamp();
+//             for log in logs {
+//                 let log_timestamp = log.timestamp();
+//                 if log_timestamp >= ts {
+//                     let dt = DateTime::from_timestamp(log_timestamp, 0).unwrap();
+//                     let local_time = dt.with_timezone(&Local);
+//                     let hour = local_time.hour();
+//                     ret.push((hour.to_string(), log));
+//                     if hour == 23 {
+//                         break;
+//                     }
+//                     ts = local_time.with_hour(hour + 1).unwrap().with_minute(0).unwrap().with_second(0).unwrap().timestamp();
+//                 }
+//             }
+
+//             Ok(ret)
+//         },
+//         _ => {
+//             Err(anyhow!("Not implemented yet"))
+//         }
+//     }
+// }
