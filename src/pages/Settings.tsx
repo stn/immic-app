@@ -81,8 +81,7 @@ function Settings() {
                   {/* <h1 className="flex-1 shrink-0 whitespace-nowrap text-xl font-semibold tracking-tight sm:grow-0">
                     General
                   </h1> */}
-                  <div className="items-center gap-2 md:ml-auto md:flex">
-                    <Button variant="outline" size="sm">Cancel</Button>
+                  <div className="items-center gap-2 ml-auto">
                     <Button size="sm">Save</Button>
                   </div>
                 </div>

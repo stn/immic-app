@@ -1,9 +1,10 @@
 use anyhow::{anyhow, Result};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Timelike, Utc};
 use image::RgbaImage;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use log::{debug, error};
+use serde::Serialize;
 use std::{
     error::Error,
     fs,
@@ -156,8 +157,16 @@ impl ScreenshotPlugin {
         Ok(())
     }
 
-    pub async fn list_screenshots(&self, date: &str) -> Result<Vec<String>> {
-        debug!("list_screenshots: date: {}", date);
+    pub async fn list_screenshots(&self, timestamp: i64, interval: db::Interval) -> Result<Vec<(String, String)>> {
+        let dt = DateTime::from_timestamp_millis(timestamp);
+        if dt.is_none() {
+            error!("Invalid timestamp: {}", timestamp);
+            return Err(anyhow!("Invalid timestamp"));
+        };
+        let dt = dt.unwrap();
+
+        let local_time = dt.with_timezone(&chrono::Local);
+        let date = local_time.format("%Y%m%d").to_string();
 
         let db = self.app.state::<db::ImmicDb>();
         let pool = db.pool().await.expect("db pool is not set");
@@ -194,14 +203,34 @@ impl ScreenshotPlugin {
             }
         })
         .collect();
-        debug!("list_screenshots: screenshot_logs: {:?}", screenshot_logs);
+        // debug!("list_screenshots: screenshot_logs: {:?}", screenshot_logs);
 
-        let screenshots: Vec<String> = screenshot_logs.iter().map(|log| {
-            let timestamp = DateTime::from_timestamp(log.timestamp, 0).unwrap();
-            format!("{}/{}-{}", timestamp.format("%Y%m%d"), timestamp.format("%H%M%S"), log.monitor_id)
-        }).collect();
+        match interval {
+            db::Interval::Hourly => {
+                // Find screenshots for each hour
+                let mut screenshots = Vec::new();
 
-        Ok(screenshots)
+                let mut ts = local_time.with_hour(0).unwrap().with_minute(0).unwrap().with_second(0).unwrap().timestamp();
+                for log in screenshot_logs {
+                    if log.timestamp >= ts {
+                        let dt = DateTime::from_timestamp(log.timestamp, 0).unwrap();
+                        let local_time = dt.with_timezone(&chrono::Local);
+                        let hour = local_time.hour();
+                        let filename = format!("{}/{}-{}", dt.format("%Y%m%d"), dt.format("%H%M%S"), log.monitor_id);
+                        screenshots.push((hour.to_string(), filename));
+                        if hour == 23 {
+                            break;
+                        }
+                        ts = local_time.with_hour(hour + 1).unwrap().with_minute(0).unwrap().with_second(0).unwrap().timestamp();
+                    }
+                }
+
+                Ok(screenshots)
+            },
+            _ => {
+                Err(anyhow!("Not implemented yet"))
+            }
+        }
     }
 
 }
@@ -261,18 +290,13 @@ struct Screenshot {
     image: RgbaImage,
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Serialize)]
 pub struct ScreenshotLog {
     pub id: i64,
     pub event_id: i64,
     pub timestamp: i64,
     pub date: String,
     pub monitor_id: i64,
-}
-
-#[tauri::command]
-pub async fn list_screenshots(screenshot_plugin: State<'_, ScreenshotPlugin>, date: &str) -> Result<Vec<String>, String> {
-    screenshot_plugin.list_screenshots(date).await.map_err(|e| e.to_string())
 }
 
 pub fn handle_iss_protocol(app: &AppHandle, request: &http::Request) -> Result<http::Response, Box<dyn Error>> {
@@ -312,6 +336,14 @@ fn check_iss_uri(uri: &str) -> bool {
     error!("Invalid uri: {}", uri);
     false
 }
+
+#[tauri::command]
+pub async fn list_screenshots(screenshot_plugin: State<'_, ScreenshotPlugin>, timestamp: i64, interval: db::Interval) -> Result<Vec<(String, String)>, String> {
+    screenshot_plugin.list_screenshots(timestamp, interval).await.map_err(|e| e.to_string())
+}
+
+
+// Tests
 
 #[cfg(test)]
 mod tests {
