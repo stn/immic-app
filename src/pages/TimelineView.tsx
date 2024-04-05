@@ -53,21 +53,26 @@ export function TimelineView(props: TimelineViewProps) {
   }, [date]);
 
   return (
-    <div className="mx-auto grid w-full items-start gap-6">
-      <h1 className="text-5xl font-semibold">
+    <div className="m-4">
+      <h1 className="text-5xl font-semibold my-6">
         {date}
       </h1>
       <div>
         { timeline && timeline.map(([hour, [screen, applications, browsers, filelogs]]) => (
-          <div key={hour}>
-            <h2 className="text-4xl font-semibold">
-              {hour}:00
-            </h2>
-            <div className="flex flex-col gap-4">
-              <div>
-                <img key={hour} src={'https://iss.localhost/' + screen + '-t'} alt={screen} />
+          <div>
+            <div key={hour}>
+              <h2 className="text-4xl font-semibold my-4">
+                {hour}:00
+              </h2>
+            </div>
+            <div className="grid grid-cols-4 gap-4">
+              <div className="mr-4">
+                <img key={hour}
+                  src={'https://iss.localhost/' + screen + '-t'}
+                  alt={`screenshot ${hour}`}
+                  />
               </div>
-              <div>
+              <div className="w-96">
                 {applications.map((app) => (
                   <div key={app.id}>
                     {app.title}
@@ -75,7 +80,7 @@ export function TimelineView(props: TimelineViewProps) {
                   </div>
                 ))}
               </div>
-              <div>
+              <div className="w-96">
                 {browsers.map((browser) => (
                   <div key={browser.id}>
                     {browser.title}
@@ -83,7 +88,7 @@ export function TimelineView(props: TimelineViewProps) {
                   </div>
                 ))}
               </div>
-              <div>
+              <div className="w-96">
                 {filelogs.map((filelog) => (
                   <div key={filelog.id}>
                     {filelog.id}: {JSON.stringify(filelog)}
