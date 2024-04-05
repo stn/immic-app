@@ -54,8 +54,9 @@ export type FileLog = {
     id: number
     event_id: number
     timestamp: number
+    timeframe: number
     date: string
-    path?: string
+    info_id: number
+    path: string
     kind?: string
-    file_type?: string
 }

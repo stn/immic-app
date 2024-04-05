@@ -282,36 +282,43 @@ impl FilelogPlugin {
         let db = self.app.state::<db::ImmicDb>();
         let pool = db.pool().await.expect("db pool is not set");
 
-        let filelogs: Vec<FileLog> = sqlx::query_as::<_,
-            (i64, i64, String, String, i64,
-            i64, i64, Option<String>)
-        >(
+        let filelogs: Vec<FileLog> = sqlx::query_as::<_, (
+            i64, i64, i64,
+            i64, Option<String>,
+            i64, String,
+        )>(
             r#"
             SELECT
-            e.id, e.timestamp, e.date, e.kind, e.log_id,
-            f.id, f.info_id, f.kind
+            e.id, e.timestamp, e.timeframe,
+            f.id, f.kind,
+            i.id, i.path
             FROM event_log e
             INNER JOIN file_log f ON e.log_id = f.id
+            INNER JOIN file_info i ON f.info_id = i.id
             WHERE e.kind = ? AND e.date = ?
             ORDER BY e.timestamp
             "#
         )
         .bind(KIND)
-        .bind(date)
+        .bind(&date)
         .fetch_all(&pool)
         .await
         .unwrap_or(Vec::new())
         .iter()
         .map(|row| {
-            let (event_id, timestamp, date, _kind, _log_id,
-                id, info_id, kind,
+            let (
+                event_id, timestamp, timeframe,
+                id, kind,
+                info_id, path,
             ) = row;
             FileLog {
                 id: *id,
                 event_id: *event_id,
                 timestamp: *timestamp,
+                timeframe: *timeframe,
                 date: date.clone(),
                 info_id: *info_id,
+                path: path.clone(),
                 kind: kind.clone(),
             }
         })
@@ -471,8 +478,10 @@ pub struct FileLog {
     pub id: i64,
     pub event_id: i64,
     pub timestamp: i64,
+    pub timeframe: i64,
     pub date: String,
     pub info_id: i64,
+    pub path: String,
     pub kind: Option<String>,
 }
 

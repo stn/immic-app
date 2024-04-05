@@ -84,7 +84,11 @@ export function TimelineView(props: TimelineViewProps) {
                   {browsers.map((browser) => (
                     <li key={browser.id}>
                       {/* <img src={browser.fav_icon_url} alt="favicon" /> */}
-                      <a href={browser.url} target="_blank" rel="noopener noreferrer">{browser.title}</a>
+                      <a href={browser.url} target="_blank" rel="noopener noreferrer"
+                        className="decoration-1 underline-offset-2 hover:underline"
+                      >
+                        {browser.title}
+                      </a>
                       {/* {JSON.stringify(browser)} */}
                     </li>
                   ))}
@@ -93,7 +97,12 @@ export function TimelineView(props: TimelineViewProps) {
               <div className="w-96">
                 {filelogs.map((filelog) => (
                   <div key={filelog.id}>
-                    {filelog.id}: {JSON.stringify(filelog)}
+                    {filelog.kind === "create" ? "C" :
+                     filelog.kind === "modify" ? "M" : 
+                     filelog.kind === "remove" ? "R" :
+                     "?"} &nbsp;
+                     {filelog.path}
+                    {/* {JSON.stringify(filelog)} */}
                   </div>
                 ))}
               </div>
