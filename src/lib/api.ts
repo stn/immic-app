@@ -43,6 +43,10 @@ export async function listBrowserLogs(timestamp: number, interval: Interval): Pr
   return await invoke("plugin:browser|list_browser_logs", { timestamp, interval });
 }
 
+export async function searchBrowserLogs(query: string): Promise<BrowserLog[]> {
+  return await invoke("plugin:browser|search_browser_logs", { query });
+}
+
 export async function listFileLogs(timestamp: number, interval: Interval): Promise<[string, FileLog[]][]> {
   return await invoke("plugin:filelog|list_file_logs", { timestamp, interval });
 }

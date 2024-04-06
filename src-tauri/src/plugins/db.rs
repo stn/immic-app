@@ -30,6 +30,7 @@ pub fn init() -> TauriPlugin<Wry> {
         .invoke_handler(tauri::generate_handler![
             list_eventlog_dates,
             list_eventlog_on,
+            search_eventlog,
         ])
         .setup(move |app| {
             debug!("immicdb plugin setup");
@@ -333,6 +334,40 @@ impl ImmicDb {
         .collect();
         Ok(result)
     }
+
+    pub async fn search_eventlog(&self, query: String) -> Result<SearchEventLogResult> {
+        let pool = self.pool().await?;
+        let result: Vec<EventLog> = sqlx::query_as::<_, (i64, i64, String, String)>(
+            r#"
+            SELECT id, timestamp, date, kind
+            FROM event_log
+            WHERE kind LIKE ?
+            ORDER BY id
+            "#
+        )
+        .bind(query)
+        .fetch_all(&pool)
+        .await
+        .unwrap_or(Vec::new())
+        .iter()
+        .map(|row| {
+            let (id, timestamp, date, kind) = row;
+            EventLog {
+                id: *id,
+                timestamp: *timestamp,
+                date: date.clone(),
+                kind: kind.clone(),
+            }
+        })
+        .collect();
+        
+        let count = result.len();
+        
+        Ok(SearchEventLogResult {
+            logs: result,
+            count,
+        })
+    }
 }
 
 // pub async fn with_pool<T, F: FnOnce(&Pool<Sqlite>) -> Result<T>>(
@@ -390,6 +425,7 @@ pub fn partition_logs<T: Timestamp>(logs: Vec<T>, local_time: &DateTime<Local>, 
             let mut ts = local_time.with_hour(0).unwrap().with_minute(0).unwrap().with_second(0).unwrap().timestamp();
             for log in logs {
                 let log_timestamp = log.timestamp();
+                // assert!(log_timestamp >= ts, "log timestamp is less than ts: {} < {}", log_timestamp, ts);
                 if log_timestamp < ts + 3600 {
                     ls.push(log);
                 } else {
@@ -443,3 +479,16 @@ pub fn partition_logs<T: Timestamp>(logs: Vec<T>, local_time: &DateTime<Local>, 
 //         }
 //     }
 // }
+
+// Search
+
+#[derive(Debug, Serialize)]
+pub struct SearchEventLogResult {
+    pub logs: Vec<EventLog>,
+    pub count: usize,
+}
+
+#[tauri::command]
+pub async fn search_eventlog(db: State<'_, ImmicDb>, query: String) -> Result<SearchEventLogResult, String> {
+    db.search_eventlog(query).await.map_err(|e| e.to_string())
+}

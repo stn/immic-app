@@ -14,12 +14,19 @@ import {
   Interval,
   listDates,
   listTimeline,
+  searchBrowserLogs,
 } from "@/lib/api";
 import {
   ApplicationLog,
   BrowserLog,
   FileLog
 } from "@/lib/events";
+
+import { useForm, SubmitHandler } from "react-hook-form";
+
+type SearchInputs = {
+  query: string;
+}
 
 export interface TimelineViewProps {
   timestamp?: number;
@@ -34,6 +41,13 @@ export function TimelineView(props: TimelineViewProps) {
   const [month, setMonth] = useState<string>("");
   const [day, setDay] = useState<string>("");
   const [timeline, setTimeline] = useState<[string, [string, ApplicationLog[], BrowserLog[], FileLog[]]][]>();
+
+  const { register, handleSubmit } = useForm<SearchInputs>();
+  const onSubmit: SubmitHandler<SearchInputs> = async (data) => {
+     console.log(data);
+     const result = await searchBrowserLogs(data.query);
+     console.log(result);
+  };
 
   const dailyView = () => {
     setInterval("Daily");
@@ -84,13 +98,17 @@ export function TimelineView(props: TimelineViewProps) {
 
   return (
     <>
-      <header className="sticky top-0 h-16 items-center gap-4 bg-transparent px-4">
+      <header className="sticky top-0 h-16 items-center bg-transparent px-4">
         <nav className="flex gap-6 text-lg font-medium mt-2">
           <div className="ml-[550px] w-[1000px]">
-            <Input
-              type="search"
-              className="bg-transparent focus:bg-background pl-8"
-            />
+            <form onSubmit={handleSubmit(onSubmit)}>
+              <Input
+                type="search"
+                className="bg-transparent focus:bg-background pl-8"
+                {...register("query")}
+              />
+              <input type="submit" className="hidden" />
+            </form>
           </div>
           <div className="ml-auto h-12 pt-2">
             <Link
@@ -102,8 +120,8 @@ export function TimelineView(props: TimelineViewProps) {
           </div>
         </nav>
       </header>
-      <main className="flex flex-1 flex-col gap-4 bg-background p-4">
-        <div className="m-4">
+      <main className="flex flex-1 flex-col gap-4 bg-background pl-4 pr-4">
+        <div className="">
           { interval === "Daily" && (
             <div>
               { dates && dates.map((d) => (
@@ -119,19 +137,19 @@ export function TimelineView(props: TimelineViewProps) {
           )}
           { interval === "Hourly" && (
             <div>
-              <h1 className="text-5xl font-semibold my-6">
+              <h1 className="text-5xl font-semibold mb-6">
                 <button onClick={dailyView}>
                   {year} / {month} / {day}
                 </button>
               </h1>
               <div>
                 { timeline && timeline.map(([hour, [screen, applications, browsers, filelogs]]) => (
-                  <div key={hour}>
-                    <h2 className="text-4xl font-semibold my-4">
+                  <div key={hour} className="my-4">
+                    <h2 className="text-4xl font-semibold">
                       {hour}:00
                     </h2>
                     <div className="grid grid-cols-4 gap-4">
-                      <div className="mr-4">
+                      <div className="m-4">
                         { screen !== "" && (
                           <img key={hour}
                             src={'https://iss.localhost/' + screen + '-t'}
