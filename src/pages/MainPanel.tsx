@@ -21,6 +21,9 @@ function MainPanel() {
   useEffect(() => {
     let isMounted = true;
 
+    // ここの処理は一見Appにあるべきにみえるが、global-shortcutの設定はsettingsに依存し、
+    // settingsがない場合はsettingsにリダイレクトするため、ここに書いている。
+
     (async () => {
       // Check if data-dir is set
       if (dataDir === "") {
@@ -29,7 +32,7 @@ function MainPanel() {
         if (isMounted) {
           setDataDir(dataDir);
           if (dataDir === "") {
-            navigate("/setting");
+            navigate("/settings");
             return;
           }
         }
