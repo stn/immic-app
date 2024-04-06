@@ -9,8 +9,8 @@ import { appWindow } from '@tauri-apps/api/window';
 import { ThemeProvider } from "@/components/theme-provider";
 
 import Layout from "./Layout";
-import MainPanel from "../pages/MainPanel";
-import Settings from "../pages/Settings";
+import MainPanel from "@/pages/MainPanel";
+import Settings from "@/pages/Settings";
 
 function App() {
   useKey("Escape", () => { appWindow.hide(); })

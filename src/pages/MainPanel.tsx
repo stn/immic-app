@@ -3,7 +3,12 @@ import { useNavigate } from "react-router-dom";
 
 import * as GS from "@tauri-apps/api/globalShortcut";
 
-import { settingGet, settingLoad, showMain } from "../lib/api";
+import {
+  settingGet,
+  settingLoad,
+  showMain
+} from "@/lib/api";
+
 import { TimelineView } from "./TimelineView";
 
 function MainPanel() {
@@ -16,6 +21,9 @@ function MainPanel() {
   useEffect(() => {
     let isMounted = true;
 
+    // ここの処理は一見Appにあるべきにみえるが、global-shortcutの設定はsettingsに依存し、
+    // settingsがない場合はsettingsにリダイレクトするため、ここに書いている。
+
     (async () => {
       // Check if data-dir is set
       if (dataDir === "") {
@@ -24,7 +32,7 @@ function MainPanel() {
         if (isMounted) {
           setDataDir(dataDir);
           if (dataDir === "") {
-            navigate("/setting");
+            navigate("/settings");
             return;
           }
         }
@@ -52,9 +60,9 @@ function MainPanel() {
   }, []);
 
   return (
-    <div>
+    <>
       <TimelineView />
-    </div>
+    </>
   );
 }
 
