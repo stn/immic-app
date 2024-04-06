@@ -21,7 +21,7 @@ function App() {
         <Routes>
           <Route element={<Layout />}>
             <Route path="/" element={<MainPanel />} />
-            <Route path="/setting" element={<Settings />} />
+            <Route path="/settings" element={<Settings />} />
           </Route>
         </Routes>
       </BrowserRouter>
