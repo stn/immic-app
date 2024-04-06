@@ -3,7 +3,12 @@ import { useNavigate } from "react-router-dom";
 
 import * as GS from "@tauri-apps/api/globalShortcut";
 
-import { settingGet, settingLoad, showMain } from "../lib/api";
+import {
+  settingGet,
+  settingLoad,
+  showMain
+} from "@/lib/api";
+
 import { TimelineView } from "./TimelineView";
 
 function MainPanel() {
@@ -52,9 +57,9 @@ function MainPanel() {
   }, []);
 
   return (
-    <div>
+    <>
       <TimelineView />
-    </div>
+    </>
   );
 }
 

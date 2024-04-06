@@ -3,8 +3,6 @@ import { Link } from "react-router-dom";
 
 import * as autostart from "tauri-plugin-autostart-api";
 
-import { settingGet, settingLoad, settingSave, settingSet, quitApp } from "../lib/api";
-
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -15,6 +13,14 @@ import {
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+
+import {
+  settingGet,
+  settingLoad,
+  settingSave,
+  settingSet,
+  quitApp
+} from "@/lib/api";
 
 function Settings() {
   const [dataDir, setDataDir] = useState("");
