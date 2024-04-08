@@ -1,15 +1,21 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, Outlet, useNavigate } from "react-router-dom";
+import { useForm, SubmitHandler } from "react-hook-form";
 
 import * as GS from "@tauri-apps/api/globalShortcut";
+
+import { Settings } from "lucide-react";
+import { Input } from "@/components/ui/input"
 
 import {
   settingGet,
   settingLoad,
-  showMain
+  showMain,
 } from "@/lib/api";
 
-import { TimelineView } from "./TimelineView";
+type SearchInputs = {
+  query: string;
+}
 
 function MainPanel() {
   const navigate = useNavigate();
@@ -18,11 +24,13 @@ function MainPanel() {
   const [globalShortcut, setGlobalShortcut] = useState<string>();
   const [shortcutRegistered, setShortcutRegistered] = useState<boolean>(false);
 
+  const { register, handleSubmit } = useForm<SearchInputs>();
+  const onSubmit: SubmitHandler<SearchInputs> = async (data) => {
+    navigate("/search", { state: { query: data.query } });
+  };
+
   useEffect(() => {
     let isMounted = true;
-
-    // ここの処理は一見Appにあるべきにみえるが、global-shortcutの設定はsettingsに依存し、
-    // settingsがない場合はsettingsにリダイレクトするため、ここに書いている。
 
     (async () => {
       // Check if data-dir is set
@@ -61,7 +69,31 @@ function MainPanel() {
 
   return (
     <>
-      <TimelineView />
+      <header className="sticky top-0 h-16 items-center bg-transparent px-4">
+        <nav className="flex gap-6 text-lg font-medium mt-2">
+          <div className="ml-[550px] w-[1000px]">
+            <form onSubmit={handleSubmit(onSubmit)}>
+              <Input
+                type="search"
+                className="bg-transparent focus:bg-background pl-8"
+                {...register("query")}
+              />
+              <input type="submit" className="hidden" />
+            </form>
+          </div>
+          <div className="ml-auto h-12 pt-2">
+            <Link
+              to="/settings"
+              className="text-muted-foreground transition-colors hover:text-foreground ml-auto"
+            >
+              <Settings className="h-6 w-6 text-muted-foreground" />
+            </Link>
+          </div>
+        </nav>
+      </header>
+      <main className="flex flex-1 flex-col gap-4 bg-background pl-4 pr-4">
+        <Outlet />
+      </main>
     </>
   );
 }

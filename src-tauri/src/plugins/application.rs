@@ -11,7 +11,7 @@ use tauri::{
 
 use crate::plugins::db;
 
-const KIND: &str = "application";
+pub const KIND: &str = "application";
 
 pub fn init() -> TauriPlugin<Wry> {
     plugin::Builder::new("application")
