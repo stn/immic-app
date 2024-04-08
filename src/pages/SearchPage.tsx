@@ -23,24 +23,25 @@ export function SearchPage(_props: SearchPageProps) {
 
   return (
     <div className="">
-      <h1>Search</h1>
-      <p>Query: {state.query}</p>
-      <div>
-        {
-          hits?.hits.map((hit) => (
-            <div key={hit.date}>
-              <h2>{hit.date}</h2>
-              <ul>
-                <li>Application Path: {hit.application_path}</li>
-                <li>Application Title: {hit.application_title}</li>
-                <li>Browser Title: {hit.browser_title}</li>
-                <li>Browser URL: {hit.browser_url}</li>
-                <li>File Path: {hit.file_path}</li>
-              </ul>
+      {
+        hits?.hits.map((hit) => (
+          <div key={hit.date} className="mb-4">
+            <div className="mb-1">
+              <span className="text-xl font-semibold mr-4">
+                {hit.date.slice(0, 4)}/{hit.date.slice(4, 6)}/{hit.date.slice(6, 8)}
+              </span>
+              <span className="">({hit.hits} hits)</span>
             </div>
-          ))
-        }
-      </div>
+            <ul>
+              { hit.application_path && <li>Application Path: {hit.application_path}</li> }
+              { hit.application_title && <li>Application Title: {hit.application_title}</li> }
+              { hit.browser_title && <li>Browser Title: {hit.browser_title}</li> }
+              { hit.browser_url && <li>Browser URL: {hit.browser_url}</li> }
+              { hit.file_path && <li>File Path: {hit.file_path}</li> }
+            </ul>
+          </div>
+        ))
+      }
     </div>
   );
 }

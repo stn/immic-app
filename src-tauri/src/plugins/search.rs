@@ -73,13 +73,13 @@ impl SearchPlugin {
             hits
                 .entry(date.clone())
                 .and_modify(|h| {
-                    h.count += count;
+                    h.hits += count;
                     h.application_title = Some(count);
                 })
                 .or_insert_with(|| {
                     let mut h = HitsPerDay::default();
                     h.date = date;
-                    h.count = count;
+                    h.hits = count;
                     h.application_title = Some(count);
                     h
                 });
@@ -110,13 +110,13 @@ impl SearchPlugin {
             hits
                 .entry(date.clone())
                 .and_modify(|h| {
-                    h.count += count;
+                    h.hits += count;
                     h.application_path = Some(count);
                 })
                 .or_insert_with(|| {
                     let mut h = HitsPerDay::default();
                     h.date = date;
-                    h.count = count;
+                    h.hits = count;
                     h.application_path = Some(count);
                     h
                 });
@@ -146,13 +146,13 @@ impl SearchPlugin {
             hits
                 .entry(date.clone())
                 .and_modify(|h| {
-                    h.count += count;
+                    h.hits += count;
                     h.browser_title = Some(count);
                 })
                 .or_insert_with(|| {
                     let mut h = HitsPerDay::default();
                     h.date = date;
-                    h.count = count;
+                    h.hits = count;
                     h.browser_title = Some(count);
                     h
                 });
@@ -183,13 +183,13 @@ impl SearchPlugin {
             hits
                 .entry(date.clone())
                 .and_modify(|h| {
-                    h.count += count;
+                    h.hits += count;
                     h.browser_url = Some(count);
                 })
                 .or_insert_with(|| {
                     let mut h = HitsPerDay::default();
                     h.date = date;
-                    h.count = count;
+                    h.hits = count;
                     h.browser_url = Some(count);
                     h
                 });
@@ -220,24 +220,24 @@ impl SearchPlugin {
             hits
                 .entry(date.clone())
                 .and_modify(|h| {
-                    h.count += count;
+                    h.hits += count;
                     h.file_path = Some(count);
                 })
                 .or_insert_with(|| {
                     let mut h = HitsPerDay::default();
                     h.date = date;
-                    h.count = count;
+                    h.hits = count;
                     h.file_path = Some(count);
                     h
                 });
         }
 
-        Ok(SearchLogsResult {
-            hits: hits
-                .into_iter()
-                .map(|(_date, h)| h)
-                .collect(),
-        })
+        let mut hits: Vec<HitsPerDay> = hits
+            .into_iter()
+            .map(|(_date, h)| h)
+            .collect();
+        hits.sort_by(|a, b| a.date.cmp(&b.date).reverse());
+        Ok(SearchLogsResult { hits })
     }
 }
 
@@ -249,7 +249,7 @@ pub struct SearchLogsResult {
 #[derive(Debug, Default, serde::Serialize)]
 pub struct HitsPerDay {
     pub date: String,
-    pub count: i64,
+    pub hits: i64,
     pub application_path: Option<i64>,
     pub application_title: Option<i64>,
     pub browser_title: Option<i64>,
