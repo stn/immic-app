@@ -35,6 +35,7 @@ async fn main() {
         .plugin(plugins::application::init())
         .plugin(plugins::filelog::init())
         .plugin(plugins::browser::init())
+        .plugin(plugins::search::init())
         .invoke_handler(tauri::generate_handler![
             app::quit_app,
             app::restart_app,
@@ -85,6 +86,13 @@ async fn main() {
                         error!("Browser server error: {}", e);
                     });
                 });
+
+                // Search is not necessary to start
+                // Search plugin
+                // let search = app.state::<plugins::search::SearchPlugin>();
+                // search.start().unwrap_or_else(|e| {
+                //     error!("Search start error: {}", e);
+                // });
 
                 info!("All plugins started");
             });

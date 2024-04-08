@@ -18,7 +18,7 @@ use crate::plugins::{
 
 use super::db;
 
-const KIND: &str = "browser";
+pub const KIND: &str = "browser";
 const SERVER_PORT_SETTING: &str = "server-port";
 const DEFAULT_SERVER_PORT: u16 = 3294;
 
