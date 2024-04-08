@@ -10,8 +10,10 @@ import { ThemeProvider } from "@/components/theme-provider";
 
 import Layout from "./Layout";
 import MainPanel from "./MainPanel";
+
 import Settings from "@/pages/Settings";
-import { TimelinePage } from "@/pages/TimelinePage";
+import DailyPage from "@/pages/DailyPage";
+import HourlyPage from "@/pages/HourlyPage";
 import { SearchPage } from "@/pages/SearchPage";
 
 function App() {
@@ -23,7 +25,8 @@ function App() {
         <Routes>
           <Route element={<Layout />}>
             <Route path="/" element={<MainPanel />}>
-              <Route index element={<TimelinePage />} />
+              <Route index element={<DailyPage />} />
+              <Route path="/:year/:month/:day" element={<HourlyPage />} />
               <Route path="search" element={<SearchPage />} />
             </Route>
             <Route path="/settings" element={<Settings />} />

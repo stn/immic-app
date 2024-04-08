@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, Link } from "react-router-dom";
 
 import {
   SearchLogsResults,
@@ -10,9 +10,9 @@ export interface SearchPageProps {
 }
 
 export function SearchPage(_props: SearchPageProps) {
-  let { state } = useLocation();
+  const { state } = useLocation();
 
-  let [hits, setHits] = useState<SearchLogsResults>();
+  const [hits, setHits] = useState<SearchLogsResults>();
   
   useEffect(() => {
     (async () => {
@@ -27,9 +27,11 @@ export function SearchPage(_props: SearchPageProps) {
         hits?.hits.map((hit) => (
           <div key={hit.date} className="mb-4">
             <div className="mb-1">
-              <span className="text-xl font-semibold mr-4">
-                {hit.date.slice(0, 4)}/{hit.date.slice(4, 6)}/{hit.date.slice(6, 8)}
-              </span>
+              <Link to={`/${dateToPath(hit.date)}`}>
+                <span className="text-xl font-semibold mr-4">
+                  {dateToPath(hit.date)}
+                </span>
+              </Link>
               <span className="">({hit.hits} hits)</span>
             </div>
             <ul>
@@ -44,4 +46,8 @@ export function SearchPage(_props: SearchPageProps) {
       }
     </div>
   );
+}
+
+function dateToPath(date: string) {
+  return `${date.slice(0, 4)}/${date.slice(4, 6)}/${date.slice(6, 8)}`;
 }
