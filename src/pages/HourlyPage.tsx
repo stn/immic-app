@@ -20,21 +20,22 @@ import {
 function HourlyPage() {
   const params = useParams();
 
-  const [timestamp, setTimestamp] = useState<number>(Date.now());
   const [timeline, setTimeline] = useState<[string, [string, ApplicationLog[], BrowserLog[], FileLog[]]][]>();
 
   useEffect(() => {
     let isMounted = true;
 
-    const ts = new Date(params.year + "-" + params.month + "-" + params.day).getTime();
-    setTimestamp(ts);
-
-    (async () => {
-      let logs = await listTimeline(timestamp, "Hourly");
-      if (isMounted) {
-        setTimeline(logs);
-      }
-    })();
+    try {
+      const ts = new Date(`${params.year}-${params.month}-${params.day}T00:00:00`).getTime();
+      (async () => {
+        let logs = await listTimeline(ts, "Hourly");
+        if (isMounted) {
+          setTimeline(logs);
+        }
+      })();
+    } catch {
+      console.error("Invalid date");
+    }
 
     return () => {
       isMounted = false;
