@@ -191,6 +191,7 @@ impl ApplicationPlugin {
 
     pub async fn list_application_logs(&self, timestamp: i64, interval: db::Interval) -> Result<Vec<(String, Vec<ApplicationLog>)>> {
         let dt = DateTime::from_timestamp_millis(timestamp);
+        // debug!("list_application_logs: timestamp: {:?}, interval: {:?}", dt, interval);
         if dt.is_none() {
             error!("Invalid timestamp: {}", timestamp);
             return Err(anyhow!("Invalid timestamp"));
@@ -199,6 +200,7 @@ impl ApplicationPlugin {
 
         let local_time = dt.with_timezone(&chrono::Local);
         let date = local_time.format("%Y%m%d").to_string();
+        // debug!("list_application_logs: date: {}", date);
 
         let db = self.app.state::<db::ImmicDb>();
         let pool = db.pool().await.unwrap();
@@ -216,7 +218,7 @@ impl ApplicationPlugin {
             FROM event_log e
             INNER JOIN application_log a ON e.log_id = a.id
             INNER JOIN application_info i ON a.info_id = i.id
-            WHERE e.kind = "application" AND e.date = "20240405"
+            WHERE e.kind = ? AND e.date = ?
             ORDER BY e.timestamp
             "#
         )
