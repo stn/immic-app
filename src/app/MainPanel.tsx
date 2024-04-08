@@ -11,7 +11,6 @@ import {
   settingGet,
   settingLoad,
   showMain,
-  searchBrowserLogs,
 } from "@/lib/api";
 
 type SearchInputs = {
@@ -27,9 +26,7 @@ function MainPanel() {
 
   const { register, handleSubmit } = useForm<SearchInputs>();
   const onSubmit: SubmitHandler<SearchInputs> = async (data) => {
-     console.log(data);
-     const result = await searchBrowserLogs(data.query);
-     console.log(result);
+    navigate("/search", { state: { query: data.query } });
   };
 
   useEffect(() => {
