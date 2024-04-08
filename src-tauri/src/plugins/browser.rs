@@ -13,7 +13,8 @@ use tauri::{
 };
 
 use crate::plugins::{
-    browser, db::ImmicDb, setting::SettingPlugin
+    db::ImmicDb,
+    setting::SettingPlugin,
 };
 
 use super::db;
@@ -27,7 +28,6 @@ pub fn init() -> TauriPlugin<Wry> {
         .invoke_handler(tauri::generate_handler![
             list_browser_logs,
             get_browser_info,
-            search_browser_logs,
         ])
         .setup(|app_handle| {
             debug!("browser plugin setup");
@@ -203,64 +203,6 @@ impl BrowserPlugin {
             Err(e) => Err(anyhow!("Not found: {}", e)),
         }
     }
-
-    pub async fn search_browser_logs(&self, query: String) -> Result<Vec<BrowserLog>> {
-        debug!("search_browser_logs: query={}", query);
-
-        let db = self.app.state::<ImmicDb>();
-        let pool = db.pool().await?;
-
-        let query = format!(
-            r#"
-            SELECT
-            e.id, e.timestamp, e.timeframe, e.date,
-            b.id, b.title, b.referrer, b.tab_id, b.opener_tab_id, b.window_id,
-            i.id, i.url, i.fav_icon_url
-            FROM event_log e
-            INNER JOIN browser_log b ON e.log_id = b.id
-            INNER JOIN browser_info i ON b.info_id = i.id
-            WHERE e.kind = '{0}' AND (i.url LIKE '%{1}%' OR b.title LIKE '%{1}%')
-            ORDER BY e.timestamp 
-            "#,
-            KIND,
-            query
-        );
-
-        let browser_logs: Vec<BrowserLog> = sqlx::query_as::<_, (
-            i64, i64, i64, String,
-            i64, Option<String>, Option<String>, Option<i64>, Option<i64>, Option<i64>,
-            i64, String, Option<String>,
-        )>(&query)
-        .fetch_all(&pool)
-        .await
-        .unwrap_or(Vec::new())
-        .iter()
-        .map(|row| {
-            let (
-                event_id, timestamp, timeframe, date,
-                id, title, referrer, tab_id, opener_tab_id, window_id,
-                info_id, url, fav_icon_url,
-            ) = row;
-            BrowserLog {
-                id: *id,
-                event_id: *event_id,
-                timestamp: *timestamp,
-                timeframe: *timeframe,
-                date: date.clone(),
-                info_id: *info_id,
-                url: url.clone(),
-                fav_icon_url: fav_icon_url.clone(),
-                title: title.clone(),
-                referrer: referrer.clone(),
-                tab_id: *tab_id,
-                opener_tab_id: *opener_tab_id,
-                window_id: *window_id,
-            }
-        })
-        .collect();
-        
-        Ok(browser_logs)
-    }
 }
 
 #[derive(Debug, PartialEq, serde::Deserialize)]
@@ -328,11 +270,6 @@ pub async fn list_browser_logs(browser: State<'_, BrowserPlugin>, timestamp: i64
 #[tauri::command]
 pub async fn get_browser_info(browser: State<'_, BrowserPlugin>, browser_id: i64) -> Result<BrowserInfo, String> {
     browser.get_browser_info(browser_id).await.map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn search_browser_logs(browser: State<'_, BrowserPlugin>, query: String) -> Result<Vec<BrowserLog>, String> {
-    browser.search_browser_logs(query).await.map_err(|e| e.to_string())
 }
 
 // tokioでも動かせれるはず

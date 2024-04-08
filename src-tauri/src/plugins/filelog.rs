@@ -28,7 +28,7 @@ use crate::plugins::{
     setting::SettingPlugin,
 };
 
-const KIND: &str = "file";
+pub const KIND: &str = "file";
 const WATCH_PATHSEST_SETTING: &str = "watch-pathset";
 
 static IGNORE_EXTS: Lazy<HashSet<&'static str>> = Lazy::new(|| {

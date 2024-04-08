@@ -8,8 +8,10 @@ use tauri::{
 };
 
 use crate::plugins::{
+    application,
     browser,
     db::ImmicDb,
+    filelog,
 };
 
 pub fn init() -> TauriPlugin<Wry> {
@@ -45,7 +47,83 @@ impl SearchPlugin {
         let db = self.app.try_state::<ImmicDb>().context("Failed to get db plugin")?;
         let pool = db.pool().await.context("Failed to get db pool")?;
 
-        let browser_hits: Vec<(String, i64)> = sqlx::query_as::<_, (
+        let mut hits: HashMap<String, HitsPerDay> = HashMap::new();
+
+        // application title
+        let application_title_hits: Vec<(String, i64)> = sqlx::query_as::<_, (
+            String, i64,
+        )>(format!(
+            r#"
+            SELECT
+            e.date, COUNT(e.id) AS count
+            FROM event_log e
+            INNER JOIN application_log a ON e.log_id = a.id
+            WHERE e.kind = '{0}' AND a.title LIKE '%{1}%'
+            GROUP BY e.date
+            ORDER BY e.date
+            "#,
+            application::KIND,
+            query).as_str()
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap_or(Vec::new());
+
+        for (date, count) in application_title_hits {
+            hits
+                .entry(date.clone())
+                .and_modify(|h| {
+                    h.count += count;
+                    h.application_title = Some(count);
+                })
+                .or_insert_with(|| {
+                    let mut h = HitsPerDay::default();
+                    h.date = date;
+                    h.count = count;
+                    h.application_title = Some(count);
+                    h
+                });
+        }
+
+        // application path
+        let application_path_hits: Vec<(String, i64)> = sqlx::query_as::<_, (
+            String, i64,
+        )>(format!(
+            r#"
+            SELECT
+            e.date, COUNT(e.id) AS count
+            FROM event_log e
+            INNER JOIN application_log a ON e.log_id = a.id
+            INNER JOIN application_info i ON a.info_id = i.id
+            WHERE e.kind = '{0}' AND i.path LIKE '%{1}%'
+            GROUP BY e.date
+            ORDER BY e.date
+            "#,
+            application::KIND,
+            query).as_str()
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap_or(Vec::new());
+
+        for (date, count) in application_path_hits {
+            hits
+                .entry(date.clone())
+                .and_modify(|h| {
+                    h.count += count;
+                    h.application_path = Some(count);
+                })
+                .or_insert_with(|| {
+                    let mut h = HitsPerDay::default();
+                    h.date = date;
+                    h.count = count;
+                    h.application_path = Some(count);
+                    h
+                });
+        }
+
+        // browser title
+        let browser_title_hits: Vec<(String, i64)> = sqlx::query_as::<_, (
             String, i64,
         )>(format!(
             r#"
@@ -53,8 +131,7 @@ impl SearchPlugin {
             e.date, COUNT(e.id) AS count
             FROM event_log e
             INNER JOIN browser_log b ON e.log_id = b.id
-            INNER JOIN browser_info i ON b.info_id = i.id
-            WHERE e.kind = '{0}' AND (i.url LIKE '%{1}%' OR b.title LIKE '%{1}%')
+            WHERE e.kind = '{0}' AND b.title LIKE '%{1}%'
             GROUP BY e.date
             ORDER BY e.date
             "#,
@@ -65,23 +142,96 @@ impl SearchPlugin {
         .await
         .unwrap_or(Vec::new());
 
-        let mut hits: HashMap<String, HitsPerDay> = HashMap::new();
-        for (date, count) in browser_hits {
+        for (date, count) in browser_title_hits {
             hits
                 .entry(date.clone())
                 .and_modify(|h| {
                     h.count += count;
-                    h.browser = count;
+                    h.browser_title = Some(count);
                 })
-                .or_insert(
-                    HitsPerDay {
-                        date,
-                        count: count,
-                        browser: count,
-                    }
-                );
+                .or_insert_with(|| {
+                    let mut h = HitsPerDay::default();
+                    h.date = date;
+                    h.count = count;
+                    h.browser_title = Some(count);
+                    h
+                });
         }
-        
+
+        // browser url
+        let browser_url_hits: Vec<(String, i64)> = sqlx::query_as::<_, (
+            String, i64,
+        )>(format!(
+            r#"
+            SELECT
+            e.date, COUNT(e.id) AS count
+            FROM event_log e
+            INNER JOIN browser_log b ON e.log_id = b.id
+            INNER JOIN browser_info i ON b.info_id = i.id
+            WHERE e.kind = '{0}' AND i.url LIKE '%{1}%'
+            GROUP BY e.date
+            ORDER BY e.date
+            "#,
+            browser::KIND,
+            query).as_str()
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap_or(Vec::new());
+
+        for (date, count) in browser_url_hits {
+            hits
+                .entry(date.clone())
+                .and_modify(|h| {
+                    h.count += count;
+                    h.browser_url = Some(count);
+                })
+                .or_insert_with(|| {
+                    let mut h = HitsPerDay::default();
+                    h.date = date;
+                    h.count = count;
+                    h.browser_url = Some(count);
+                    h
+                });
+        }
+
+        // file path
+        let file_path_hits: Vec<(String, i64)> = sqlx::query_as::<_, (
+            String, i64,
+        )>(format!(
+            r#"
+            SELECT
+            e.date, COUNT(e.id) AS count
+            FROM event_log e
+            INNER JOIN file_log f ON e.log_id = f.id
+            INNER JOIN file_info i ON f.info_id = i.id
+            WHERE e.kind = '{0}' AND i.path LIKE '%{1}%'
+            GROUP BY e.date
+            ORDER BY e.date
+            "#,
+            filelog::KIND,
+            query).as_str()
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap_or(Vec::new());
+
+        for (date, count) in file_path_hits {
+            hits
+                .entry(date.clone())
+                .and_modify(|h| {
+                    h.count += count;
+                    h.file_path = Some(count);
+                })
+                .or_insert_with(|| {
+                    let mut h = HitsPerDay::default();
+                    h.date = date;
+                    h.count = count;
+                    h.file_path = Some(count);
+                    h
+                });
+        }
+
         Ok(SearchLogsResult {
             hits: hits
                 .into_iter()
@@ -100,7 +250,11 @@ pub struct SearchLogsResult {
 pub struct HitsPerDay {
     pub date: String,
     pub count: i64,
-    pub browser: i64,
+    pub application_path: Option<i64>,
+    pub application_title: Option<i64>,
+    pub browser_title: Option<i64>,
+    pub browser_url: Option<i64>,
+    pub file_path: Option<i64>,
 }
 
 #[tauri::command]
