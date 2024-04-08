@@ -7,7 +7,7 @@
   },
   "package": {
     "productName": "immic-app-dev",
-    "version": "0.1.2"
+    "version": "0.1.3"
   },
   "tauri": {
     "allowlist": {
