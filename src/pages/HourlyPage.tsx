@@ -11,7 +11,6 @@ import {
 import {
   image_url,
   listTimeline,
-  thumb_image_url,
 } from "@/lib/api";
 import {
   ApplicationLog,
@@ -26,7 +25,7 @@ function HourlyPage() {
   const [timeline, setTimeline] = useState<[string, [ScreenshotLog[], ApplicationLog[], BrowserLog[], FileLog[]]][]>();
   const [screenUrl, setScreenUrl] = useState<string>("");
 
-  const setTimeframe = (timeframe: number, screens: ScreenshotLog[]) => {
+  const setTimeframe = (_timeframe: number, screens: ScreenshotLog[]) => {
     if (screens.length > 0) {
       setScreenUrl(image_url(screens[0]));
     }
