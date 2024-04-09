@@ -69,7 +69,7 @@ function MainPanel() {
 
   return (
     <>
-      <header className="sticky top-0 h-16 items-center bg-transparent px-4">
+      <header className="sticky top-0 h-16 items-center bg-transparent px-4 z-30">
         <nav className="flex gap-6 text-lg font-medium mt-2">
           <div className="ml-[550px] w-[1000px]">
             <form onSubmit={handleSubmit(onSubmit)}>

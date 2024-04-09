@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use chrono::{DateTime, Timelike, Utc};
+use chrono::{DateTime, Utc};
 use image::RgbaImage;
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -62,7 +62,7 @@ impl ScreenshotPlugin {
     pub fn start(&self) -> Result<()> {
         debug!("ScreenshotPlugin start");
 
-        let image_dir = image_dir(&self.app);
+        let image_dir = image_base_dir(&self.app);
         if let Err(e) = image_dir {
             error!("failed to get image_dir: {}", e);
             return Err(e);
@@ -157,7 +157,7 @@ impl ScreenshotPlugin {
         Ok(())
     }
 
-    pub async fn list_screenshots(&self, timestamp: i64, interval: db::Interval) -> Result<Vec<(String, String)>> {
+    pub async fn list_screenshots(&self, timestamp: i64, interval: db::Interval) -> Result<Vec<(String, Vec<ScreenshotLog>)>> {
         let dt = DateTime::from_timestamp_millis(timestamp);
         if dt.is_none() {
             error!("Invalid timestamp: {}", timestamp);
@@ -172,11 +172,11 @@ impl ScreenshotPlugin {
         let pool = db.pool().await.expect("db pool is not set");
 
         let screenshot_logs: Vec<ScreenshotLog> = sqlx::query_as::<_,
-        (i64, i64, String, String, i64,
+        (i64, i64, i64, String, String, i64,
         i64, i64)>(
             r#"
             SELECT
-            e.id, e.timestamp, e.date, e.kind, e.log_id,
+            e.id, e.timestamp, e.timeframe, e.date, e.kind, e.log_id,
             s.id, s.monitor_id
             FROM event_log e
             INNER JOIN screenshot s ON e.log_id = s.id
@@ -191,13 +191,14 @@ impl ScreenshotPlugin {
         .unwrap_or(Vec::new())
         .iter()
         .map(|row| {
-            let (event_id, timestamp, date, _kind, _log_id,
+            let (event_id, timestamp, timeframe, date, _kind, _log_id,
                 id, monitor_id,
                 ) = row;
             ScreenshotLog {
                 id: *id,
                 event_id: *event_id,
                 timestamp: *timestamp,
+                timeframe: *timeframe,
                 date: date.clone(),
                 monitor_id: *monitor_id,
             }
@@ -205,37 +206,42 @@ impl ScreenshotPlugin {
         .collect();
         // debug!("list_screenshots: screenshot_logs: {:?}", screenshot_logs);
 
-        match interval {
-            db::Interval::Hourly => {
-                // Find screenshots for each hour
-                let mut screenshots = Vec::new();
-
-                let mut ts = local_time.with_hour(0).unwrap().with_minute(0).unwrap().with_second(0).unwrap().timestamp();
-                for log in screenshot_logs {
-                    if log.timestamp >= ts {
-                        let dt = DateTime::from_timestamp(log.timestamp, 0).unwrap();
-                        let local_time = dt.with_timezone(&chrono::Local);
-                        let hour = local_time.hour();
-                        let filename = format!("{}/{}-{}", dt.format("%Y%m%d"), dt.format("%H%M%S"), log.monitor_id);
-                        screenshots.push((format!("{hour:02}"), filename));
-                        if hour == 23 {
-                            break;
-                        }
-                        ts = local_time.with_hour(hour + 1).unwrap().with_minute(0).unwrap().with_second(0).unwrap().timestamp();
-                    }
-                }
-
-                Ok(screenshots)
-            },
-            _ => {
-                Err(anyhow!("Not implemented yet"))
-            }
-        }
+        db::partition_logs(screenshot_logs, &local_time, interval)
     }
 
+    pub async fn get_screenshots_for(&self, timeframe: i64) -> Result<Vec<String>> {
+        let db = self.app.state::<db::ImmicDb>();
+        let pool = db.pool().await.expect("db pool is not set");
+
+        let ss: Vec<String> = sqlx::query_as::<_, (i64, i64)>(
+            r#"
+            SELECT
+                e.timestamp,
+                s.monitor_id
+            FROM event_log e
+            INNER JOIN screenshot s ON e.log_id = s.id
+            WHERE e.kind = ? AND e.timeframe = ?
+            "#
+        )
+        .bind(KIND)
+        .bind(timeframe)
+        .fetch_all(&pool)
+        .await
+        .unwrap_or(Vec::new())
+        .iter()
+        .map(|(timestamp, monitor_id)| {
+            let ts = DateTime::from_timestamp(*timestamp, 0).unwrap();
+            let dir = image_dir_name(ts);
+            let filename = image_basename(ts, *monitor_id);
+            format!("{}/{}", dir, filename)
+        })
+        .collect();
+
+        Ok(ss)  
+    }
 }
 
-fn image_dir(app: &AppHandle) -> Result<PathBuf> {
+fn image_base_dir(app: &AppHandle) -> Result<PathBuf> {
     let setting = app.state::<SettingPlugin>();
     let data_dir = setting.get(DATA_DIR_SETTING)?
         .and_then(|v| v.as_str().map(|s| s.to_string()))
@@ -254,14 +260,22 @@ fn image_dir(app: &AppHandle) -> Result<PathBuf> {
     Ok(image_dir)
 }
 
+fn image_dir_name(timestamp: DateTime<Utc>) -> String {
+    timestamp.format("%Y%m%d").to_string()
+}
+
+fn image_basename(timestamp: DateTime<Utc>, monitor_id: i64) -> String {
+    format!("{}-{}", timestamp.format("%H%M%S"), monitor_id)
+}
+
 fn image_path(dir: &PathBuf, timestamp: DateTime<Utc>, monitor_id: i64) -> (PathBuf, PathBuf) {
-    let date_dir = dir.join(timestamp.format("%Y%m%d").to_string());
+    let date_dir = dir.join(image_dir_name(timestamp));
     if !date_dir.exists() {
         std::fs::create_dir(&date_dir).unwrap();
     }
-    let filename = format!("{}-{}.jpg", timestamp.format("%H%M%S"), monitor_id);
-    let path = date_dir.join(filename);
-    let thumb_path = date_dir.join(format!("{}-{}-t.jpg", timestamp.format("%H%M%S"), monitor_id));
+    let basename = image_basename(timestamp, monitor_id);
+    let path = date_dir.join(format!("{}.jpg", basename));
+    let thumb_path = date_dir.join(format!("{}-t.jpg", basename));
 
     (path, thumb_path)
 }
@@ -295,6 +309,7 @@ pub struct ScreenshotLog {
     pub id: i64,
     pub event_id: i64,
     pub timestamp: i64,
+    pub timeframe: i64,
     pub date: String,
     pub monitor_id: i64,
 }
@@ -317,7 +332,7 @@ pub fn handle_iss_protocol(app: &AppHandle, request: &http::Request) -> Result<h
     let date = parts.next().unwrap();
     let filename = parts.next().unwrap();
 
-    let screen_dir = image_dir(app).expect("image_dir is not set");
+    let screen_dir = image_base_dir(app).expect("image_dir is not set");
 
     let date_dir = screen_dir.join(date);
     let path = date_dir.join(format!("{}.jpg", filename));
@@ -344,10 +359,13 @@ fn check_iss_uri(uri: &str) -> bool {
 }
 
 #[tauri::command]
-pub async fn list_screenshots(screenshot_plugin: State<'_, ScreenshotPlugin>, timestamp: i64, interval: db::Interval) -> Result<Vec<(String, String)>, String> {
+pub async fn list_screenshots(screenshot_plugin: State<'_, ScreenshotPlugin>, timestamp: i64, interval: db::Interval) -> Result<Vec<(String, Vec<ScreenshotLog>)>, String> {
     screenshot_plugin.list_screenshots(timestamp, interval).await.map_err(|e| e.to_string())
 }
 
+pub async fn get_screenshots_for(screenshot_plugin: State<'_, ScreenshotPlugin>, timeframe: i64) -> Result<Vec<String>, String> {
+    screenshot_plugin.get_screenshots_for(timeframe).await.map_err(|e| e.to_string())
+}
 
 // Tests
 
