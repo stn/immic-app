@@ -143,16 +143,9 @@ impl ScreenshotPlugin {
     }
 
     async fn save_screenshot(&self, screenshot: &Screenshot) -> Result<()> {
-        // let image_dir = self.image_dir.as_ref().unwrap();
         let image_dir = self.image_dir.lock().unwrap().clone().unwrap();
-        let (path, thumb_path) = image_path(&image_dir, screenshot.timestamp, screenshot.monitor);
+        let path = image_path(&image_dir, screenshot.timestamp, screenshot.monitor);
         screenshot.image.save(path).expect("failed to save screenshot");
-
-        // thumbnail
-        let width = screenshot.image.width() / 8;
-        let height = screenshot.image.height() / 8;
-        let thumb = image::imageops::thumbnail(&screenshot.image, width, height);
-        thumb.save(thumb_path).unwrap();
 
         Ok(())
     }
@@ -268,16 +261,13 @@ fn image_basename(timestamp: DateTime<Utc>, monitor_id: i64) -> String {
     format!("{}-{}", timestamp.format("%H%M%S"), monitor_id)
 }
 
-fn image_path(dir: &PathBuf, timestamp: DateTime<Utc>, monitor_id: i64) -> (PathBuf, PathBuf) {
+fn image_path(dir: &PathBuf, timestamp: DateTime<Utc>, monitor_id: i64) -> PathBuf {
     let date_dir = dir.join(image_dir_name(timestamp));
     if !date_dir.exists() {
         std::fs::create_dir(&date_dir).unwrap();
     }
     let basename = image_basename(timestamp, monitor_id);
-    let path = date_dir.join(format!("{}.jpg", basename));
-    let thumb_path = date_dir.join(format!("{}-t.jpg", basename));
-
-    (path, thumb_path)
+    date_dir.join(format!("{}.jpg", basename))
 }
 
 fn is_blank(image: &RgbaImage) -> bool {
