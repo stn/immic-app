@@ -60,3 +60,12 @@ export type FileLog = {
     path: string
     kind?: string
 }
+
+export type ScreenshotLog = {
+    id: number
+    event_id: number
+    timestamp: number
+    timeframe: number
+    date: string
+    monitor_id: number
+}

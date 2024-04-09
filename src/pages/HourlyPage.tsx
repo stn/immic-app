@@ -9,18 +9,28 @@ import {
 } from "@/components/ui/tooltip"
 
 import {
+  image_url,
   listTimeline,
+  thumb_image_url,
 } from "@/lib/api";
 import {
   ApplicationLog,
   BrowserLog,
-  FileLog
+  FileLog,
+  ScreenshotLog
 } from "@/lib/events";
 
 function HourlyPage() {
   const params = useParams();
 
-  const [timeline, setTimeline] = useState<[string, [string, ApplicationLog[], BrowserLog[], FileLog[]]][]>();
+  const [timeline, setTimeline] = useState<[string, [ScreenshotLog[], ApplicationLog[], BrowserLog[], FileLog[]]][]>();
+  const [screenUrl, setScreenUrl] = useState<string>("");
+
+  const setTimeframe = (timeframe: number, screens: ScreenshotLog[]) => {
+    if (screens.length > 0) {
+      setScreenUrl(image_url(screens[0]));
+    }
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -31,6 +41,9 @@ function HourlyPage() {
         let logs = await listTimeline(ts, "Hourly");
         if (isMounted) {
           setTimeline(logs);
+          if (logs.length > 0 && logs[0][1][0].length > 0) {
+            setScreenUrl(image_url(logs[0][1][0][0]));
+          }
         }
       })();
     } catch {
@@ -43,30 +56,29 @@ function HourlyPage() {
   }, []);
 
   return (
-    <div>
-      <h1 className="text-5xl font-semibold mb-6">
-        <Link to="/">
-          {params.year}/{params.month}/{params.day}
-        </Link>
-      </h1>
-      <div>
-        { timeline && timeline.map(([hour, [screen, applications, browsers, filelogs]]) => (
+    <div
+      style={{ "background-image": `url(${screenUrl})` } as React.CSSProperties}
+      className="bg-fixed bg-contain bg-center bg-no-repeat"
+      >
+      <div className="sticky top-0 pb-2 bg-transparent/20">
+        <h1 className="text-4xl font-semibold mb-6 bg-black">
+          <Link to="/">
+            {params.year}/{params.month}/{params.day}
+          </Link>
+        </h1>
+      </div>
+      <div className="mt-20 bg-transparent/20">
+        { timeline && timeline.map(([hour, [screens, applications, browsers, filelogs]]) => (
           <div key={hour} className="my-4">
-            <div className="flex flex-row">
-              <h2 className="text-4xl font-semibold">
-                {hour}:00
-              </h2>
-              <span className="m-4">
-                { screen !== "" && (
-                  <img key={hour}
-                    src={'https://iss.localhost/' + screen + '-t'}
-                    alt={`screenshot ${hour}`}
-                    />
-                )}
-              </span>
-            </div>
-            { zipLogs([applications, browsers, filelogs]).map(([timeframe, [applications, browsers, filelogs]]) => (
-              <div key={timeframe} className="grid grid-cols-3 gap-4">
+            <h2 className="text-4xl font-semibold mb-2">
+              {hour}:00
+            </h2>
+            { zipLogs([screens, applications, browsers, filelogs]).map(([timeframe, [screens, applications, browsers, filelogs]]) => (
+              <div
+               key={timeframe}
+               className="grid grid-cols-3 gap-4 hover:bg-stone-800"
+               onMouseEnter={() => setTimeframe(timeframe, screens)}
+               >
                 <div className="w-96 col-start-1">
                   {applications.map((app) => (
                     <div key={app.id}>
@@ -122,22 +134,30 @@ function HourlyPage() {
   );
 }
 
-function zipLogs(logs: [ApplicationLog[], BrowserLog[], FileLog[]]): [number, [ApplicationLog[], BrowserLog[], FileLog[]]][] {
-  const [applications, browsers, filelogs] = logs;
+function zipLogs(logs: [ScreenshotLog[], ApplicationLog[], BrowserLog[], FileLog[]]): [number, [ScreenshotLog[], ApplicationLog[], BrowserLog[], FileLog[]]][] {
+  const [screens, applications, browsers, filelogs] = logs;
 
   let timeframes = [...new Set([
+    ...screens.map((s) => s.timeframe),
     ...applications.map((a) => a.timeframe),
     ...browsers.map((b) => b.timeframe),
     ...filelogs.map((f) => f.timeframe),
   ])].sort();
 
-  let zipped: [number, [ApplicationLog[], BrowserLog[], FileLog[]]][] = [];
+  let zipped: [number, [ScreenshotLog[], ApplicationLog[], BrowserLog[], FileLog[]]][] = [];
 
+  let screenIndex = 0;
   let appIndex = 0;
   let browserIndex = 0;
   let filelogIndex = 0;
 
   for (let t of timeframes) {
+    let scrs = [];
+    while (screenIndex < screens.length && screens[screenIndex].timeframe === t) {
+      scrs.push(screens[screenIndex]);
+      screenIndex++;
+    }
+
     let apps = [];
     while (appIndex < applications.length && applications[appIndex].timeframe === t) {
       apps.push(applications[appIndex]);
@@ -156,7 +176,7 @@ function zipLogs(logs: [ApplicationLog[], BrowserLog[], FileLog[]]): [number, [A
       filelogIndex++;
     }
 
-    zipped.push([t, [apps, brs, fls]]);
+    zipped.push([t, [scrs, apps, brs, fls]]);
   }
 
   return zipped;
