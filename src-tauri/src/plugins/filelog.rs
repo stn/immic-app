@@ -199,7 +199,7 @@ impl FilelogPlugin {
         let setting = self.app.state::<SettingPlugin>();
         let watch_pathset = setting.get(WATCH_PATHSEST_SETTING)?
             .and_then(|v| v.as_str().map(|s| s.to_string()))
-            .map(|s| s.split(',').map(PathBuf::from).collect());
+            .map(|s| s.split('|').map(PathBuf::from).collect());
         debug!("watch_pathset: {:?}", watch_pathset);
 
         Ok(watch_pathset.unwrap())
