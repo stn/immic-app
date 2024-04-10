@@ -35,7 +35,7 @@ export function SearchPage(_props: SearchPageProps) {
               <span className="">({hit.hits} hits)</span>
             </div>
             <ul>
-              { hit.application_path && <li>Application Path: {hit.application_path}</li> }
+              { hit.application_name && <li>Application Name: {hit.application_name}</li> }
               { hit.application_title && <li>Application Title: {hit.application_title}</li> }
               { hit.browser_title && <li>Browser Title: {hit.browser_title}</li> }
               { hit.browser_url && <li>Browser URL: {hit.browser_url}</li> }
