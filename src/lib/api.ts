@@ -47,7 +47,7 @@ export async function listBrowserLogs(timestamp: number, interval: Interval): Pr
 export type HitsPerDay = {
   date: string;
   hits: number;
-  application_path?: number;
+  application_name?: number;
   application_title?: number;
   browser_title?: number;
   browser_url?: number;

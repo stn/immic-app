@@ -85,8 +85,8 @@ impl SearchPlugin {
                 });
         }
 
-        // application path
-        let application_path_hits: Vec<(String, i64)> = sqlx::query_as::<_, (
+        // application name
+        let application_name_hits: Vec<(String, i64)> = sqlx::query_as::<_, (
             String, i64,
         )>(format!(
             r#"
@@ -95,7 +95,7 @@ impl SearchPlugin {
             FROM event_log e
             INNER JOIN application_log a ON e.log_id = a.id
             INNER JOIN application_info i ON a.info_id = i.id
-            WHERE e.kind = '{0}' AND i.path LIKE '%{1}%'
+            WHERE e.kind = '{0}' AND i.name LIKE '%{1}%'
             GROUP BY e.date
             ORDER BY e.date
             "#,
@@ -106,18 +106,18 @@ impl SearchPlugin {
         .await
         .unwrap_or(Vec::new());
 
-        for (date, count) in application_path_hits {
+        for (date, count) in application_name_hits {
             hits
                 .entry(date.clone())
                 .and_modify(|h| {
                     h.hits += count;
-                    h.application_path = Some(count);
+                    h.application_name = Some(count);
                 })
                 .or_insert_with(|| {
                     let mut h = HitsPerDay::default();
                     h.date = date;
                     h.hits = count;
-                    h.application_path = Some(count);
+                    h.application_name = Some(count);
                     h
                 });
         }
@@ -250,7 +250,7 @@ pub struct SearchLogsResult {
 pub struct HitsPerDay {
     pub date: String,
     pub hits: i64,
-    pub application_path: Option<i64>,
+    pub application_name: Option<i64>,
     pub application_title: Option<i64>,
     pub browser_title: Option<i64>,
     pub browser_url: Option<i64>,
