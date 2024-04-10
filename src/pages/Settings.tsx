@@ -1,6 +1,4 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-
 import { dialog } from "@tauri-apps/api";
 import * as autostart from "tauri-plugin-autostart-api";
 
@@ -14,6 +12,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { WatchDir, WatchDirTable } from "@/components/watch-dirs";
 
 import {
   settingGet,
@@ -26,11 +25,14 @@ import {
 function Settings() {
   const [dataDir, setDataDir] = useState("");
   const [serverPort, setServerPort] = useState("");
-  const [watchPathset, setWatchPathset] = useState<string>("");
+  const [watchDirs, setWatchDirs] = useState<WatchDir[]>([]);
   const [autostartEnabled, setAutostartEnabled] = useState(false);
   const [globalShortcut, setGlobalShortcut] = useState<string>("");
 
   function storePreferences() {
+    // TODO: escape '|' in path
+    const watchPathset = watchDirs.map((dir) => dir.path).join("|");
+
     (async () => {
       await settingSet("data-dir", dataDir);
       await settingSet("server-port", serverPort);
@@ -60,12 +62,14 @@ function Settings() {
       const dataDir = await settingGet<string>("data-dir") || "";
       const serverPort = await settingGet<string>("server-port") || "53294";
       const watchPathset = await settingGet<string>("watch-pathset") || "";
+      // TODO: unescape '|' in path
+      const watchDirs = watchPathset.split("|").filter((path) => path !== "").map((path) => { return { path: path }; });
       const autostartEnabled = await autostart.isEnabled();
       const globalShortcut = await settingGet<string>("global-shortcut") || "Alt+Shift+K";
       if (isMounted) {
         setDataDir(dataDir);
         setServerPort(serverPort);
-        setWatchPathset(watchPathset);
+        setWatchDirs(watchDirs);
         setAutostartEnabled(autostartEnabled);
         setGlobalShortcut(globalShortcut);
       }
@@ -82,19 +86,16 @@ function Settings() {
           <h1 className="text-3xl font-semibold">
             Settings
           </h1>
-          <Link to="#" className="font-semibold text-primary">
+          {/* <Link to="#" className="font-semibold text-primary">
             General
           </Link>
-          <Link to="#">Advanced</Link>
+          <Link to="#">Advanced</Link> */}
         </nav>
         <div className="grid gap-4">
           <form>
             <div className="mx-auto grid max-w-[59rem] flex-1 auto-rows-max gap-4">
               <div className="grid gap-6">
                 <div className="flex gap-6">
-                  {/* <h1 className="flex-1 shrink-0 whitespace-nowrap text-xl font-semibold tracking-tight sm:grow-0">
-                    General
-                  </h1> */}
                   <div className="items-center gap-2 ml-auto">
                     <Button
                       size="sm"
@@ -114,7 +115,7 @@ function Settings() {
                         <CardTitle>General</CardTitle>
                       </CardHeader>
                       <CardContent>
-                        <div className="grid gap-6">
+                        <div className="grid gap-10">
                           <div className="grid gap-3">
                             <Label htmlFor="data-dir">Data Directory</Label>
                             <div>
@@ -122,6 +123,7 @@ function Settings() {
                             </div>
                             <Button
                               id="data-dir"
+                              className="w-20"
                               variant="outline"
                               onClick={(e) => {
                                 e.preventDefault();
@@ -143,13 +145,9 @@ function Settings() {
                           </div>
                           <div className="grid gap-3">
                             <Label htmlFor="watch-pathset">Watch Pathset</Label>
-                            <Input
-                              id="watch-pathset"
-                              type="text"
-                              className="w-full"
-                              defaultValue={watchPathset}
-                              onChange={(e) => setWatchPathset(e.currentTarget.value)}
-                            />
+                            <WatchDirTable
+                              dirs={watchDirs}
+                              />
                           </div>
                           <div className="grid gap-3">
                             <Label htmlFor="autostart">Autostart</Label>
