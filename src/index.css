@@ -74,3 +74,19 @@
     @apply bg-background text-foreground;
   }
 }
+
+@layer base {
+  /* Firefox */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: black #222;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: #222;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background-color: black;
+  }
+}
