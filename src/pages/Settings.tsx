@@ -30,10 +30,10 @@ function Settings() {
   const [globalShortcut, setGlobalShortcut] = useState<string>("");
 
   function storePreferences() {
-    // TODO: escape '|' in path
-    const watchPathset = watchDirs.map((dir) => dir.path).join("|");
-
     (async () => {
+      // TODO: escape '|' in path
+      const watchPathset = watchDirs.map((dir) => dir.path).join("|");
+
       await settingSet("data-dir", dataDir);
       await settingSet("server-port", serverPort);
       await settingSet("watch-pathset", watchPathset);
@@ -147,6 +147,7 @@ function Settings() {
                             <Label htmlFor="watch-pathset">Watch Pathset</Label>
                             <WatchDirTable
                               dirs={watchDirs}
+                              setDirs={setWatchDirs}
                               />
                           </div>
                           <div className="grid gap-3">
