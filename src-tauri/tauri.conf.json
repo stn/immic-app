@@ -15,6 +15,10 @@
       "globalShortcut": {
         "all": true
       },
+      "dialog": {
+        "all": false,
+        "open": true
+      },
       "shell": {
         "all": false,
         "open": true

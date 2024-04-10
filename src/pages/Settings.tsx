@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
+import { dialog } from "@tauri-apps/api";
 import * as autostart from "tauri-plugin-autostart-api";
 
 import { Button } from "@/components/ui/button";
@@ -29,13 +30,27 @@ function Settings() {
   const [autostartEnabled, setAutostartEnabled] = useState(false);
   const [globalShortcut, setGlobalShortcut] = useState<string>("");
 
-  async function storePreferences() {
-    await settingSet("data-dir", dataDir);
-    await settingSet("server-port", serverPort);
-    await settingSet("watch-pathset", watchPathset);
-    await settingSet("global-shortcut", globalShortcut);
-    await settingSave();
-    await quitApp();
+  function storePreferences() {
+    (async () => {
+      await settingSet("data-dir", dataDir);
+      await settingSet("server-port", serverPort);
+      await settingSet("watch-pathset", watchPathset);
+      await settingSet("global-shortcut", globalShortcut);
+      await settingSave();
+      await quitApp();
+    })();
+  }
+
+  function selectDataDir() {
+    (async () => {
+      const selected = await dialog.open({
+        directory: true,
+        defaultPath: dataDir,
+      });
+      if (selected && typeof selected === "string" && selected !== "" && dataDir !== selected) {
+        setDataDir(selected);
+      }
+    })();
   }
 
   useEffect(() => {
@@ -73,14 +88,7 @@ function Settings() {
           <Link to="#">Advanced</Link>
         </nav>
         <div className="grid gap-4">
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              (async () => {
-                storePreferences();
-              })();
-            }}
-          >
+          <form>
             <div className="mx-auto grid max-w-[59rem] flex-1 auto-rows-max gap-4">
               <div className="grid gap-6">
                 <div className="flex gap-6">
@@ -88,7 +96,15 @@ function Settings() {
                     General
                   </h1> */}
                   <div className="items-center gap-2 ml-auto">
-                    <Button size="sm">Save</Button>
+                    <Button
+                      size="sm"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        storePreferences();
+                      }}
+                    >
+                      Save
+                    </Button>
                   </div>
                 </div>
                 <div className="grid gap-4">
@@ -101,13 +117,19 @@ function Settings() {
                         <div className="grid gap-6">
                           <div className="grid gap-3">
                             <Label htmlFor="data-dir">Data Directory</Label>
-                            <Input
+                            <div>
+                              {dataDir}
+                            </div>
+                            <Button
                               id="data-dir"
-                              type="text"
-                              className="w-full"
-                              defaultValue={dataDir}
-                              onChange={(e) => setDataDir(e.currentTarget.value)}
-                            />
+                              variant="outline"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                selectDataDir()
+                              }}
+                            >
+                              Select
+                            </Button>
                           </div>
                           <div className="grid gap-3">
                             <Label htmlFor="server-port">Server Port</Label>
@@ -116,7 +138,7 @@ function Settings() {
                               type="number"
                               className="w-full"
                               defaultValue={serverPort}
-                              onChange={(e) => setDataDir(e.currentTarget.value)}
+                              onChange={(e) => setServerPort(e.currentTarget.value)}
                             />
                           </div>
                           <div className="grid gap-3">
