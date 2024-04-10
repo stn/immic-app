@@ -56,7 +56,7 @@ function HourlyPage() {
 
   return (
     <div
-      style={{ "background-image": `url(${screenUrl})` } as React.CSSProperties}
+      style={{ "backgroundImage": `url(${screenUrl})` } as React.CSSProperties}
       className="bg-fixed bg-contain bg-center bg-no-repeat"
       >
       <div className="sticky top-0 pb-2 bg-transparent/20">
@@ -75,7 +75,7 @@ function HourlyPage() {
             { zipLogs([screens, applications, browsers, filelogs]).map(([timeframe, [screens, applications, browsers, filelogs]]) => (
               <div
                key={timeframe}
-               className="grid grid-cols-3 gap-4 hover:bg-stone-800"
+               className="grid grid-cols-3 gap-4 hover:bg-transparent/80"
                onMouseEnter={() => setTimeframe(timeframe, screens)}
                >
                 <div className="w-96 col-start-1">
