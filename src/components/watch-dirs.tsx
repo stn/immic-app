@@ -51,18 +51,14 @@ export const columns: ColumnDef<WatchDir>[] = [
 
 export interface WatchDirsProps {
   dirs: WatchDir[]
+  setDirs: (dirs: WatchDir[]) => void
 }
 
-export function WatchDirTable({ dirs }: WatchDirsProps) {
-    const [watchDirs, setWatchDirs] = useState<WatchDir[]>([]);
+export function WatchDirTable({ dirs, setDirs }: WatchDirsProps) {
     const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
 
-    useEffect(() => {
-        setWatchDirs(dirs);
-    }, [dirs]);
-  
     const table = useReactTable({
-        data: watchDirs,
+        data: dirs,
         columns,
         getCoreRowModel: getCoreRowModel(),
         onRowSelectionChange: setRowSelection,
@@ -87,21 +83,24 @@ export function WatchDirTable({ dirs }: WatchDirsProps) {
                 newDirs.push({ path: selected });
                 }
                 // TODO: escape '|' in path
-                setWatchDirs([...watchDirs, ...newDirs]);
+                setDirs([...dirs, ...newDirs]);
             }
         })();
-    }, [watchDirs]);
+    }, [dirs]);
 
     const removeWatchDir = useCallback(() => {
         let newDirs: WatchDir[] = [];
-        for (let i = 0; i < watchDirs.length; i++) {
+        for (let i = 0; i < dirs.length; i++) {
             if (!rowSelection[i]) {
-                newDirs.push(watchDirs[i]);
+                newDirs.push(dirs[i]);
             }
         }
-        setWatchDirs(newDirs);
+        if (newDirs.length === dirs.length) {
+            return;
+        }
+        setDirs(newDirs);
         setRowSelection({});
-    }, [watchDirs, rowSelection]);
+    }, [dirs, rowSelection]);
 
     return (
         <div className="flex flex-rows grid">
