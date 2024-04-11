@@ -40,22 +40,7 @@ pub fn init() -> TauriPlugin<Wry> {
             Ok(())
         })
         .on_event(|app, event| {
-            // let app = app.clone();
             match event {
-                // RunEvent::Ready => {
-                //     debug!("RunEvent::Ready");
-                //     tokio::spawn(async move {
-                //         let db = app.state::<ImmicDb>();
-                //         let (resp_tx, resp_rx) = oneshot::channel();
-                //         if let Err(e) = db.tx.send(Command::Migrate { resp: resp_tx }).await {
-                //             error!("failed to send migrate command: {}", e);
-                //             return;
-                //         }
-                //         if let Err(e) = resp_rx.await {
-                //             error!("failed to migrate: {}", e);
-                //         }
-                //     });
-                // },
                 RunEvent::Exit => {
                     debug!("RunEvent::Exit");
                     let db = app.state::<ImmicDb>();
@@ -65,19 +50,6 @@ pub fn init() -> TauriPlugin<Wry> {
                             pool.close().await;
                         });
                     }
-                    // let (resp_tx, resp_rx) = oneshot::channel();
-                    // let cmd = Command::Close {
-                    //     resp: resp_tx,
-                    // };
-                    // tokio::spawn(async move {
-                    //     if db.tx.send(cmd).await.is_err() {
-                    //         error!("failed to send close command");
-                    //         return;
-                    //     }
-                    //     if resp_rx.await.is_err() {
-                    //         error!("failed to close db");
-                    //     }
-                    // });
                 },
                 _ => (),
             }
@@ -88,109 +60,19 @@ pub fn init() -> TauriPlugin<Wry> {
 pub struct ImmicDb {
     app: AppHandle,
     pool: Mutex<Option<Pool<Sqlite>>>,
-    // tx: mpsc::Sender<Command>,
 }
 
 impl ImmicDb {
     fn new(app: AppHandle) -> Self {
-        // let (tx, mut rx) = mpsc::channel(128);
-
-        let db = Self {
+        Self {
             app,
             pool: Mutex::new(None),
-            // tx,
-        };
-
-        // tokio::spawn(async move {
-        //     while let Some(cmd) = rx.recv().await {
-        //         debug!("received command: {:?}", cmd);
-        //         let db = app.state::<ImmicDb>();
-        //         match cmd {
-        //             Command::Migrate { resp } => {
-        //                 debug!("migrate");
-        //                 let result = db.migrate().await;
-        //                 debug!("migrate result: {:?}", result);
-        //                 resp.send(result).unwrap_or_else(|e| {
-        //                     error!("failed to send migrate result: {:?}", e);
-        //                 });
-        //             },
-        //             Command::Close { resp } => {
-        //                 rx.close();
-        //                 let pool = db.pool.lock().unwrap().clone();
-        //                 if let Some(pool) = pool {
-        //                     pool.close().await;
-        //                 }
-        //                 let _ = resp.send(Ok(()));
-        //             },
-        //             Command::Pool { resp } => {
-        //                 let pool = db.pool.lock().unwrap().clone();
-        //                 let _ = resp.send(match pool {
-        //                     Some(pool) => Ok(pool),
-        //                     None => {
-        //                         debug!("initialize pool");
-        //                         let path = db_path(app.clone()).unwrap();
-        //                         debug!("db path: {:?}", path);
-        //                         let options = SqliteConnectOptions::new()
-        //                             .filename(path)
-        //                             .create_if_missing(true)
-        //                             .journal_mode(SqliteJournalMode::Wal)
-        //                             .synchronous(SqliteSynchronous::Normal);
-        //                         let pool = SqlitePoolOptions::new().connect_lazy_with(options);
-        //                         db.pool.lock().unwrap().replace(pool.clone());
-        //                         Ok(pool)
-        //                     }
-        //                 });
-        //             },
-        //         }
-        //     }
-        // });
-
-        db
+        }
     }
 
     pub async fn pool(&self) -> Result<Pool<Sqlite>> {
-        // let (resp_tx, resp_rx) = oneshot::channel();
-        // let cmd = Command::Pool {
-        //     resp: resp_tx,
-        // };
-        // debug!("send Pool command");
-        // if self.tx.send(cmd).await.is_err() {
-        //     return Err(anyhow!("failed to send command"));
-        // }
-        // debug!("await Pool response");
-        // match resp_rx.await {
-        //     Ok(result) => {
-        //         debug!("pool result: {:?}", result);
-        //         result
-        //     },
-        //     Err(e) => Err(anyhow!("failed to get pool: {}", e)),
-        // }
-
-        // let pool = self.pool.lock().unwrap().clone();
-        // match self.pool.lock().unwrap().as_ref() {
-        //     Some(pool) => Ok(pool.clone()),
-        //     None => Err(anyhow!("pool is not initialized")),
-        // }
-
         self.pool.lock().unwrap().clone()
             .ok_or_else(|| anyhow!("pool is not initialized"))
-
-        // match pool {
-        //     Some(pool) => Ok(pool),
-        //     None => {
-        //         debug!("initialize pool");
-        //         let path = db_path(self.app.clone()).unwrap();
-        //         debug!("db path: {:?}", path);
-        //         let options = SqliteConnectOptions::new()
-        //             .filename(path)
-        //             .create_if_missing(true)
-        //             .journal_mode(SqliteJournalMode::Wal)
-        //             .synchronous(SqliteSynchronous::Normal);
-        //         let pool = SqlitePoolOptions::new().connect_lazy_with(options);
-        //         self.pool.lock().unwrap().replace(pool.clone());
-        //         Ok(pool)
-        //     }
-        // }
     }
 
     pub fn start(&self) -> Result<()> {
@@ -201,11 +83,6 @@ impl ImmicDb {
         }
 
         let path = self.db_path()?;
-        // if let Err(e) = path {
-        //     error!("failed to get db path: {}", e);
-        //     return Err(e);
-        // }
-        // let path = path.unwrap();
         let options = SqliteConnectOptions::new()
             .filename(path)
             .create_if_missing(true)
@@ -217,7 +94,6 @@ impl ImmicDb {
     }
 
     fn db_path(&self) -> Result<PathBuf> {
-        // debug!("db_path");
         let setting = self.app.state::<SettingPlugin>();
         let data_dir = setting.get(DATA_DIR_SETTING)?
             .and_then(|v| v.as_str().map(|s| s.to_string()))
@@ -225,11 +101,8 @@ impl ImmicDb {
         if data_dir.is_none() {
             return Err(anyhow!("{} is not set", DATA_DIR_SETTING));
         }
-        // debug!("{}: {:?}", DATA_DIR_SETTING, data_dir);
 
         let db_path = data_dir.unwrap().join(DATABASE_FILE);
-        // debug!("db_path: {}", db_path);
-
         Ok(db_path)
     }
 
@@ -335,15 +208,6 @@ impl ImmicDb {
     }
 }
 
-// pub async fn with_pool<T, F: FnOnce(&Pool<Sqlite>) -> Result<T>>(
-//     app: AppHandle,
-//     f: F,
-// ) -> Result<T> {
-//     let db = app.state::<ImmicDb>();
-//     let pool = db.pool().await?;
-//     f(&pool)
-// }
-
 
 // EventLog
 
@@ -416,31 +280,3 @@ pub fn partition_logs<T: Timestamp>(logs: Vec<T>, local_time: &DateTime<Local>, 
         }
     }
 }
-
-// pub fn first_logs<T: Timestamp>(logs: Vec<T>, local_time: &DateTime<Local>, interval: Interval) -> Result<Vec<(String, T)>> {
-//     match interval {
-//         Interval::Hourly => {
-//             let mut ret = Vec::new();
-
-//             let mut ts = local_time.with_hour(0).unwrap().with_minute(0).unwrap().with_second(0).unwrap().timestamp();
-//             for log in logs {
-//                 let log_timestamp = log.timestamp();
-//                 if log_timestamp >= ts {
-//                     let dt = DateTime::from_timestamp(log_timestamp, 0).unwrap();
-//                     let local_time = dt.with_timezone(&Local);
-//                     let hour = local_time.hour();
-//                     ret.push((hour.to_string(), log));
-//                     if hour == 23 {
-//                         break;
-//                     }
-//                     ts = local_time.with_hour(hour + 1).unwrap().with_minute(0).unwrap().with_second(0).unwrap().timestamp();
-//                 }
-//             }
-
-//             Ok(ret)
-//         },
-//         _ => {
-//             Err(anyhow!("Not implemented yet"))
-//         }
-//     }
-// }
