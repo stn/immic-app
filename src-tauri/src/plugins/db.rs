@@ -20,6 +20,10 @@ use tauri::{
     AppHandle, Manager, RunEvent, State, Wry,
     plugin::TauriPlugin,
 };
+use tokio::{
+    fs::File,
+    io::{AsyncWriteExt, BufWriter},
+};
 
 use crate::plugins::{
     application::{ApplicationPlugin, ApplicationLog},
@@ -205,31 +209,19 @@ impl ImmicDb {
     }
 
     pub async fn export_logs(&self, filename: String) -> Result<()> {
-        // let setting = self.app.state::<SettingPlugin>();
-        // let data_dir = setting.get(DATA_DIR_SETTING)?
-        //     .and_then(|v| v.as_str().map(|s| s.to_string()))
-        //     .map(PathBuf::from);
-        // if data_dir.is_none() {
-        //     return Err(anyhow!("{} is not set", DATA_DIR_SETTING));
-        // }
-        // let datetime = Local::now().format("%Y%m%d%H%M%S").to_string();
-        // let file_path = data_dir.unwrap().join(format!("immicdb-{}.jsonl", datetime));
+        let file = File::create(filename).await?;
+        let mut writer = BufWriter::new(file);
+        let dates = self.list_eventlog_dates().await?;
+        for date in dates.into_iter() {
+            let logs = self.list_any_logs_on(date).await?;
+            for log in logs.into_iter() {
+                let line = serde_json::to_string(&log)?;
+                writer.write(line.as_bytes()).await?;
+                writer.write(b"\n").await?;
+            }
+            writer.flush().await?;
+        }
 
-        let mut file = tokio::fs::File::create(filename).await?;
-
-        // let pool = self.pool().await?;
-        // let mut stream = sqlx::query_as::<_, ExportLine>(
-        //     r#"
-        //     SELECT id, timestamp, date, kind
-        //     FROM event_log
-        //     "#
-        // )
-        // .fetch(&pool);
-        // while let Some(row) = stream.try_next().await? {
-        //     let line = serde_json::to_string(&row)?;
-        //     file.write_all(line.as_bytes()).await?;
-        //     file.write_all(b"\n").await?;
-        // }
         Ok(())
     }
 }

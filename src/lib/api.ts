@@ -36,6 +36,10 @@ export async function listDates(): Promise<string[]> {
   return await invoke("plugin:immicdb|list_eventlog_dates");
 }
 
+export async function exportLogs(filename: string): Promise<void> {
+  return await invoke("plugin:immicdb|export_logs", { filename });
+}
+
 export type HitsPerDay = {
   date: string;
   hits: number;
