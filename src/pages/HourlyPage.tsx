@@ -10,7 +10,7 @@ import {
 
 import {
   image_url,
-  listTimeline,
+  listTimelineOn,
 } from "@/lib/api";
 import {
   ApplicationLog,
@@ -35,9 +35,10 @@ function HourlyPage() {
     let isMounted = true;
 
     try {
-      const ts = new Date(`${params.year}-${params.month}-${params.day}T00:00:00`).getTime();
+      // const ts = new Date(`${params.year}-${params.month}-${params.day}T00:00:00`).getTime();
       (async () => {
-        let logs = await listTimeline(ts, "Hourly");
+        let logs = await listTimelineOn(`${params.year}${params.month}${params.day}`);
+        // let logs = await listTimeline(ts, "Hourly");
         if (isMounted) {
           setTimeline(logs);
           if (logs.length > 0 && logs[0][1][0].length > 0) {

@@ -19,7 +19,8 @@ import {
   settingLoad,
   settingSave,
   settingSet,
-  quitApp
+  quitApp,
+  exportLogs
 } from "@/lib/api";
 
 function Settings() {
@@ -51,6 +52,17 @@ function Settings() {
       });
       if (selected && typeof selected === "string" && selected !== "" && dataDir !== selected) {
         setDataDir(selected);
+      }
+    })();
+  }
+
+  function saveLogs() {
+    (async () => {
+      const filename = await dialog.save({
+        defaultPath: dataDir,
+      });
+      if (filename && typeof filename === "string" && filename !== "") {
+        exportLogs(filename);
       }
     })();
   }
@@ -174,6 +186,20 @@ function Settings() {
                               defaultValue={globalShortcut}
                               onChange={(e) => setGlobalShortcut(e.currentTarget.value)}
                             />
+                          </div>
+                          <div className="grid gap-3">
+                            <Label htmlFor="export-db">Export Database</Label>
+                            <Button
+                              id="export-db"
+                              className="w-20"
+                              variant="outline"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                saveLogs()
+                              }}
+                            >
+                              Export
+                            </Button>
                           </div>
                         </div>
                       </CardContent>

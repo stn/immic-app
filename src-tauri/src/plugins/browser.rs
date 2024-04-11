@@ -4,9 +4,11 @@ use actix_web::{
     http, middleware, web,
     App, HttpServer,
 };
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context as _, Result};
 use chrono::DateTime;
+use futures::TryStreamExt;
 use log::{debug, error};
+use serde::{Deserialize, Serialize};
 use tauri::{
     plugin::{self, TauriPlugin},
     AppHandle, Manager, State, Wry,
@@ -26,7 +28,7 @@ const DEFAULT_SERVER_PORT: u16 = 3294;
 pub fn init() -> TauriPlugin<Wry> {
     plugin::Builder::new("browser")
         .invoke_handler(tauri::generate_handler![
-            list_browser_logs,
+            list_browser_logs_on,
             get_browser_info,
         ])
         .setup(|app_handle| {
@@ -110,21 +112,11 @@ impl BrowserPlugin {
         Ok(log_id)
     }
 
-    pub async fn list_browser_logs(&self, timestamp: i64, interval: db::Interval) -> Result<Vec<(String, Vec<BrowserLog>)>> {
-        let dt = DateTime::from_timestamp_millis(timestamp);
-        if dt.is_none() {
-            error!("Invalid timestamp: {}", timestamp);
-            return Err(anyhow!("Invalid timestamp"));
-        };
-        let dt = dt.unwrap();
-
-        let local_time = dt.with_timezone(&chrono::Local);
-        let date = local_time.format("%Y%m%d").to_string();
-
+    pub async fn list_browser_logs_on(&self, date: String) -> Result<Vec<BrowserLog>> {
         let db = self.app.state::<ImmicDb>();
-        let pool = db.pool().await.expect("db pool is not set");
+        let pool = db.pool().await.context("db pool is not set")?;
 
-        let browser_logs: Vec<BrowserLog> = sqlx::query_as::<_, (
+        let mut rows = sqlx::query_as::<_, (
             i64, i64, i64,
             i64, Option<String>, Option<String>, Option<i64>, Option<i64>, Option<i64>,
             i64, String, Option<String>,
@@ -143,36 +135,32 @@ impl BrowserPlugin {
         )
         .bind(KIND)
         .bind(&date)
-        .fetch_all(&pool)
-        .await
-        .unwrap_or(Vec::new())
-        .iter()
-        .map(|row| {
+        .fetch(&pool);
+
+        let mut browserlogs = Vec::new();
+        while let Some(row) = rows.try_next().await? {
             let (
                 event_id, timestamp, timeframe,
                 id, title, referrer, tab_id, opener_tab_id, window_id,
                 info_id, url, fav_icon_url,
             ) = row;
-            BrowserLog {
-                id: *id,
-                event_id: *event_id,
-                timestamp: *timestamp,
-                timeframe: *timeframe,
+            browserlogs.push(BrowserLog {
+                id,
+                event_id,
+                timestamp,
+                timeframe,
                 date: date.clone(),
-                info_id: *info_id,
-                url: url.clone(),
-                fav_icon_url: fav_icon_url.clone(),
-                title: title.clone(),
-                referrer: referrer.clone(),
-                tab_id: *tab_id,
-                opener_tab_id: *opener_tab_id,
-                window_id: *window_id,
-            }
-        })
-        .collect();
-        // debug!("list_browsers: browser_logs: {:?}", browser_logs);
-
-        db::partition_logs(browser_logs, &local_time, interval)
+                info_id,
+                url,
+                fav_icon_url,
+                title,
+                referrer,
+                tab_id,
+                opener_tab_id,
+                window_id,
+            });
+        }
+        Ok(browserlogs)
     }
 
     pub async fn get_browser_info(&self, browser_id: i64) -> Result<BrowserInfo> {
@@ -205,7 +193,7 @@ impl BrowserPlugin {
     }
 }
 
-#[derive(Debug, PartialEq, serde::Deserialize)]
+#[derive(Debug, PartialEq, Deserialize)]
 #[allow(non_snake_case)]
 struct TabInfo {
   tabId: Option<i64>,
@@ -232,7 +220,7 @@ pub async fn browserlog(tab_info: web::Json<TabInfo>, data: web::Data<AppHandle>
     Ok("ok".to_string())
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct BrowserLog {
     pub id: i64,
     pub event_id: i64,
@@ -255,7 +243,7 @@ impl db::Timestamp for BrowserLog {
     }
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Serialize)]
 pub struct BrowserInfo {
     pub id: i64,
     pub url: String,
@@ -263,8 +251,8 @@ pub struct BrowserInfo {
 }
 
 #[tauri::command]
-pub async fn list_browser_logs(browser: State<'_, BrowserPlugin>, timestamp: i64, interval: db::Interval) -> Result<Vec<(String, Vec<BrowserLog>)>, String> {
-    browser.list_browser_logs(timestamp, interval).await.map_err(|e| e.to_string())
+pub async fn list_browser_logs_on(browser: State<'_, BrowserPlugin>, date: String) -> Result<Vec<BrowserLog>, String> {
+    browser.list_browser_logs_on(date).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]

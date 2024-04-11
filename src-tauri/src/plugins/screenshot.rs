@@ -1,10 +1,11 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context as _, Result};
 use chrono::{DateTime, Utc};
+use futures::TryStreamExt;
 use image::RgbaImage;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use log::{debug, error};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     error::Error,
     fs,
@@ -27,7 +28,9 @@ const SCREENSHOT_DIR: &str = "screenshot";
 
 pub fn init() -> TauriPlugin<Wry> {
     plugin::Builder::new("screenshot")
-        .invoke_handler(tauri::generate_handler![list_screenshots])
+        .invoke_handler(tauri::generate_handler![
+            list_screenshot_logs_on,
+        ])
         .setup(|app_handle| {
             debug!("screenshot plugin setup");
             let screen = ScreenshotPlugin::new(app_handle.clone());
@@ -150,23 +153,14 @@ impl ScreenshotPlugin {
         Ok(())
     }
 
-    pub async fn list_screenshots(&self, timestamp: i64, interval: db::Interval) -> Result<Vec<(String, Vec<ScreenshotLog>)>> {
-        let dt = DateTime::from_timestamp_millis(timestamp);
-        if dt.is_none() {
-            error!("Invalid timestamp: {}", timestamp);
-            return Err(anyhow!("Invalid timestamp"));
-        };
-        let dt = dt.unwrap();
-
-        let local_time = dt.with_timezone(&chrono::Local);
-        let date = local_time.format("%Y%m%d").to_string();
-
+    pub async fn list_screenshot_logs_on(&self, date: String) -> Result<Vec<ScreenshotLog>> {
         let db = self.app.state::<db::ImmicDb>();
-        let pool = db.pool().await.expect("db pool is not set");
+        let pool = db.pool().await.context("db pool is not set")?;
 
-        let screenshot_logs: Vec<ScreenshotLog> = sqlx::query_as::<_,
-        (i64, i64, i64, String, String, i64,
-        i64, i64)>(
+        let mut rows = sqlx::query_as::<_, (
+            i64, i64, i64, String, String, i64,
+            i64, i64
+        )>(
             r#"
             SELECT
             e.id, e.timestamp, e.timeframe, e.date, e.kind, e.log_id,
@@ -179,27 +173,24 @@ impl ScreenshotPlugin {
         )
         .bind(KIND)
         .bind(date)
-        .fetch_all(&pool)
-        .await
-        .unwrap_or(Vec::new())
-        .iter()
-        .map(|row| {
-            let (event_id, timestamp, timeframe, date, _kind, _log_id,
-                id, monitor_id,
-                ) = row;
-            ScreenshotLog {
-                id: *id,
-                event_id: *event_id,
-                timestamp: *timestamp,
-                timeframe: *timeframe,
-                date: date.clone(),
-                monitor_id: *monitor_id,
-            }
-        })
-        .collect();
-        // debug!("list_screenshots: screenshot_logs: {:?}", screenshot_logs);
+        .fetch(&pool);
 
-        db::partition_logs(screenshot_logs, &local_time, interval)
+        let mut screenshot_logs = Vec::new();
+        while let Some(row) = rows.try_next().await? {
+            let (
+                event_id, timestamp, timeframe, date, _kind, _log_id,
+                id, monitor_id,
+            ) = row;
+            screenshot_logs.push(ScreenshotLog {
+                id,
+                event_id,
+                timestamp,
+                timeframe,
+                date,
+                monitor_id,
+            });
+        }
+        Ok(screenshot_logs)
     }
 
     pub async fn get_screenshots_for(&self, timeframe: i64) -> Result<Vec<String>> {
@@ -294,7 +285,7 @@ struct Screenshot {
     image: RgbaImage,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ScreenshotLog {
     pub id: i64,
     pub event_id: i64,
@@ -349,8 +340,8 @@ fn check_iss_uri(uri: &str) -> bool {
 }
 
 #[tauri::command]
-pub async fn list_screenshots(screenshot_plugin: State<'_, ScreenshotPlugin>, timestamp: i64, interval: db::Interval) -> Result<Vec<(String, Vec<ScreenshotLog>)>, String> {
-    screenshot_plugin.list_screenshots(timestamp, interval).await.map_err(|e| e.to_string())
+pub async fn list_screenshot_logs_on(screenshot_plugin: State<'_, ScreenshotPlugin>, date: String) -> Result<Vec<ScreenshotLog>, String> {
+    screenshot_plugin.list_screenshot_logs_on(date).await.map_err(|e| e.to_string())
 }
 
 pub async fn get_screenshots_for(screenshot_plugin: State<'_, ScreenshotPlugin>, timeframe: i64) -> Result<Vec<String>, String> {

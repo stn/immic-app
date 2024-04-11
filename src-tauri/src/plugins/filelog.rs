@@ -1,5 +1,6 @@
-use anyhow::{anyhow, Result};
-use chrono::{DateTime, Utc};
+use anyhow::{Context as _, Result};
+use chrono::Utc;
+use futures::TryStreamExt;
 use log::{debug, error, info};
 use notify_debouncer_full::{
     notify::{self, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher},
@@ -10,6 +11,7 @@ use notify_debouncer_full::{
 };
 use once_cell::sync::Lazy;
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::HashSet,
     fmt,
@@ -60,7 +62,7 @@ static IGNORE_PAT: Lazy<Regex> = Lazy::new(|| {
 pub fn init() -> TauriPlugin<Wry> {
     plugin::Builder::new("filelog")
         .invoke_handler(tauri::generate_handler![
-            list_file_logs,
+            list_file_logs_on,
             get_file_info,
         ])
         .setup(|app_handle| {
@@ -267,22 +269,11 @@ impl FilelogPlugin {
         Ok(log_id)
     }
 
-    pub async fn list_file_logs(&self, timestamp: i64, interval: db::Interval) -> Result<Vec<(String, Vec<FileLog>)>> {
-        let dt = DateTime::from_timestamp_millis(timestamp);
-        if dt.is_none() {
-            error!("Invalid timestamp: {}", timestamp);
-            return Err(anyhow!("Invalid timestamp"));
-        };
-        let dt = dt.unwrap();
-
-        let local_time = dt.with_timezone(&chrono::Local);
-        let date = local_time.format("%Y%m%d").to_string();
-        // debug!("list_filelogs: date: {}", date);
-
+    pub async fn list_file_logs_on(&self, date: String) -> Result<Vec<FileLog>> {
         let db = self.app.state::<db::ImmicDb>();
-        let pool = db.pool().await.expect("db pool is not set");
+        let pool = db.pool().await.context("db pool is not set")?;
 
-        let filelogs: Vec<FileLog> = sqlx::query_as::<_, (
+        let mut rows = sqlx::query_as::<_, (
             i64, i64, i64,
             i64, Option<String>,
             i64, String,
@@ -301,31 +292,27 @@ impl FilelogPlugin {
         )
         .bind(KIND)
         .bind(&date)
-        .fetch_all(&pool)
-        .await
-        .unwrap_or(Vec::new())
-        .iter()
-        .map(|row| {
+        .fetch(&pool);
+
+        let mut filelogs = Vec::new();
+        while let Some(row) = rows.try_next().await? {
             let (
                 event_id, timestamp, timeframe,
                 id, kind,
                 info_id, path,
             ) = row;
-            FileLog {
-                id: *id,
-                event_id: *event_id,
-                timestamp: *timestamp,
-                timeframe: *timeframe,
+            filelogs.push(FileLog {
+                id,
+                event_id,
+                timestamp,
+                timeframe,
                 date: date.clone(),
-                info_id: *info_id,
-                path: path.clone(),
-                kind: kind.clone(),
-            }
-        })
-        .collect();
-        // debug!("list_filelogs: filelogs: {:?}", filelogs);
-
-        db::partition_logs(filelogs, &local_time, interval)
+                info_id,
+                path,
+                kind,
+            });
+        }
+        Ok(filelogs)
     }
 
     pub async fn get_file_info(&self, file_id: i64) -> Result<FileInfo> {
@@ -442,7 +429,7 @@ fn check_ignore(info: &FileEventInfo) -> bool {
     false
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct FileLog {
     pub id: i64,
     pub event_id: i64,
@@ -460,15 +447,15 @@ impl db::Timestamp for FileLog {
     }
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Serialize)]
 pub struct FileInfo {
     pub id: i64,
     pub path: String,
 }
 
 #[tauri::command]
-pub async fn list_file_logs(file_log: State<'_, FilelogPlugin>, timestamp: i64, interval: db::Interval) -> Result<Vec<(String, Vec<FileLog>)>, String> {
-    file_log.list_file_logs(timestamp, interval).await.map_err(|e| e.to_string())
+pub async fn list_file_logs_on(file_log: State<'_, FilelogPlugin>, date: String) -> Result<Vec<FileLog>, String> {
+    file_log.list_file_logs_on(date).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
