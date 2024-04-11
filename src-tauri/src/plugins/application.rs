@@ -1,6 +1,6 @@
 use active_win_pos_rs::get_active_window;
 use anyhow::{anyhow, Context as _, Result};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use futures::TryStreamExt;
 use log::debug;
 use serde::{Deserialize, Serialize};
@@ -191,23 +191,127 @@ impl ApplicationPlugin {
         Ok(log_id)
     }
 
+    pub async fn insert_application_log(&self, log: &ApplicationLog) -> Result<(i64, i64)> {
+        assert!(log.ref_id.is_none(), "ref_id must be None");
+
+        let timestamp = DateTime::from_timestamp(log.timestamp, 0).context("Invalid timestamp")?;
+
+        // Insert event_log
+        let db = self.app.state::<db::ImmicDb>();
+        let event_id = db.insert_eventlog(timestamp, KIND).await?;
+
+        // Search application_info by path
+        let pool = db.pool().await.context("db pool is not set")?;
+        let result = sqlx::query_as::<_, (i64,)>(
+            r#"
+            SELECT id
+            FROM application_info
+            WHERE path = ?
+            "#
+        )
+        .bind(&log.path)
+        .fetch_one(&pool)
+        .await;
+
+        let info_id = match result {
+            Ok((id,)) => id,
+            Err(_) => {
+                // Insert application_info for new path
+                let result = sqlx::query(
+                    r#"
+                    INSERT INTO application_info (path, name)
+                    VALUES (?, ?)
+                    "#
+                )
+                .bind(&log.path)
+                .bind(&log.name)
+                .execute(&pool)
+                .await?;
+                result.last_insert_rowid()
+            }
+        };
+
+        let result = sqlx::query(
+            r#"
+            INSERT INTO application_log (event_id, info_id, process_id, title, x, y, width, height)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            "#
+        )
+        .bind(event_id)
+        .bind(info_id)
+        .bind(log.process_id)
+        .bind(&log.title)
+        .bind(log.x)
+        .bind(log.y)
+        .bind(log.width)
+        .bind(log.height)
+        .execute(&pool)
+        .await?;
+
+        // Update event_log with log_id
+        let log_id = result.last_insert_rowid();
+        db.update_eventlog_logid(event_id, log_id).await?;
+
+        Ok((log_id, info_id))
+    }
+
+    pub async fn insert_application_log_ref(&self, log: &ApplicationLog, last_ids: &Option<(i64, i64)>) -> Result<i64> {
+        assert!(log.ref_id.is_some(), "ref_id must be Some");
+        assert!(last_ids.is_some(), "last_ids must be Some");
+
+        let (ref_id, info_id) = last_ids.unwrap();
+
+        let timestamp = DateTime::from_timestamp(log.timestamp, 0).expect("Invalid timestamp");
+
+        // Insert event_log
+        let db = self.app.state::<db::ImmicDb>();
+        let event_id = db.insert_eventlog(timestamp, KIND).await?;
+
+        let pool = db.pool().await.unwrap();
+        let result = sqlx::query(
+            r#"
+            INSERT INTO application_log (event_id, info_id, ref_id)
+            VALUES (?, ?, ?)
+            "#
+        )
+        .bind(event_id)
+        .bind(info_id)
+        .bind(ref_id)
+        .execute(&pool)
+        .await?;
+
+        // Update event_log with log_id
+        let log_id = result.last_insert_rowid();
+        db.update_eventlog_logid(event_id, log_id).await?;
+
+        Ok(log_id)
+    }
+
     pub async fn list_application_logs_on(&self, date: String) -> Result<Vec<ApplicationLog>> {
         let db = self.app.state::<db::ImmicDb>();
         let pool = db.pool().await.context("db pool is not set")?;
 
         let mut rows = sqlx::query_as::<_, (
             i64, i64, i64,
-            i64, Option<i64>, Option<String>, Option<i64>, Option<i64>, Option<i64>, Option<i64>,
+            i64, Option<i64>, Option<String>, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>,
             i64, String, Option<String>,
         )>(
             r#"
             SELECT
             e.id, e.timestamp, e.timeframe,
-            a.id, a.process_id, a.title, a.x, a.y, a.width, a.height,
+            a.id,
+            coalesce(a.process_id, a0.process_id) as process_id,
+            coalesce(a.title, a0.title) as title,
+            coalesce(a.x, a0.x) as x,
+            coalesce(a.y, a0.y) as y,
+            coalesce(a.width, a0.width) as width,
+            coalesce(a.height, a0.height) as height,
+            a.ref_id,
             i.id, i.name, i.path
             FROM event_log e
             INNER JOIN application_log a ON e.log_id = a.id
             INNER JOIN application_info i ON a.info_id = i.id
+            LEFT JOIN application_log a0 ON a.ref_id is not null AND a.ref_id = a0.id
             WHERE e.kind = ? AND e.date = ?
             ORDER BY e.timestamp
             "#
@@ -220,7 +324,7 @@ impl ApplicationPlugin {
         while let Some(row) = rows.try_next().await? {
             let (
                 event_id, timestamp, timeframe,
-                id, process_id, title, x, y, width, height,
+                id, process_id, title, x, y, width, height, ref_id,
                 info_id, name, path,
             ) = row;
             application_logs.push(ApplicationLog {
@@ -238,6 +342,7 @@ impl ApplicationPlugin {
                 y,
                 width,
                 height,
+                ref_id,
             });
         }
         Ok(application_logs)
@@ -328,6 +433,7 @@ pub struct ApplicationLog {
     pub y: Option<i64>,
     pub width: Option<i64>,
     pub height: Option<i64>,
+    pub ref_id: Option<i64>,
 }
 
 impl db::Timestamp for ApplicationLog {

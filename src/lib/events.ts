@@ -20,6 +20,7 @@ export type ApplicationLog = {
     y?: number
     width?: number
     height?: number
+    ref_id?: number
 }
 
 export type ApplicationInfo = {

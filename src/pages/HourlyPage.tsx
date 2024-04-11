@@ -35,10 +35,8 @@ function HourlyPage() {
     let isMounted = true;
 
     try {
-      // const ts = new Date(`${params.year}-${params.month}-${params.day}T00:00:00`).getTime();
       (async () => {
         let logs = await listTimelineOn(`${params.year}${params.month}${params.day}`);
-        // let logs = await listTimeline(ts, "Hourly");
         if (isMounted) {
           setTimeline(logs);
           if (logs.length > 0 && logs[0][1][0].length > 0) {
