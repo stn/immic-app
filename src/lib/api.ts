@@ -106,7 +106,7 @@ function partitionLogHourly<T extends { timestamp: number }>(logs: T[]): Map<str
   let hourly_logs = new Map();
   for (let log of logs) {
     // convert timestamp to hour in localtime
-    let hour = new Date(log.timestamp * 1000).toLocaleDateString("en-US", { hour: "2-digit", hour12: false });
+    let hour = new Date(log.timestamp * 1000).toLocaleString("en-US", { hour: "2-digit", hour12: false });
     if (hourly_logs.has(hour)) {
       hourly_logs.get(hour).push(log);
     } else {

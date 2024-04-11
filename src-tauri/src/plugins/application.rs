@@ -313,7 +313,7 @@ impl ApplicationPlugin {
             INNER JOIN application_info i ON a.info_id = i.id
             LEFT JOIN application_log a0 ON a.ref_id is not null AND a.ref_id = a0.id
             WHERE e.kind = ? AND e.date = ?
-            ORDER BY e.id
+            ORDER BY e.timestamp
             "#
         )
         .bind(KIND)
