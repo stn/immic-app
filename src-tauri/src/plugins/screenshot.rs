@@ -29,8 +29,7 @@ const SCREENSHOT_DIR: &str = "screenshot";
 pub fn init() -> TauriPlugin<Wry> {
     plugin::Builder::new("screenshot")
         .invoke_handler(tauri::generate_handler![
-            list_screenshots,
-            list_screenshots_on,
+            list_screenshot_logs_on,
         ])
         .setup(|app_handle| {
             debug!("screenshot plugin setup");
@@ -154,7 +153,7 @@ impl ScreenshotPlugin {
         Ok(())
     }
 
-    pub async fn list_screenshots_on(&self, date: String) -> Result<Vec<ScreenshotLog>> {
+    pub async fn list_screenshot_logs_on(&self, date: String) -> Result<Vec<ScreenshotLog>> {
         let db = self.app.state::<db::ImmicDb>();
         let pool = db.pool().await.context("db pool is not set")?;
 
@@ -192,58 +191,6 @@ impl ScreenshotPlugin {
             });
         }
         Ok(screenshot_logs)
-    }
-
-    pub async fn list_screenshots(&self, timestamp: i64, interval: db::Interval) -> Result<Vec<(String, Vec<ScreenshotLog>)>> {
-        let dt = DateTime::from_timestamp_millis(timestamp);
-        if dt.is_none() {
-            error!("Invalid timestamp: {}", timestamp);
-            return Err(anyhow!("Invalid timestamp"));
-        };
-        let dt = dt.unwrap();
-
-        let local_time = dt.with_timezone(&chrono::Local);
-        let date = local_time.format("%Y%m%d").to_string();
-
-        let db = self.app.state::<db::ImmicDb>();
-        let pool = db.pool().await.expect("db pool is not set");
-
-        let screenshot_logs: Vec<ScreenshotLog> = sqlx::query_as::<_,
-        (i64, i64, i64, String, String, i64,
-        i64, i64)>(
-            r#"
-            SELECT
-            e.id, e.timestamp, e.timeframe, e.date, e.kind, e.log_id,
-            s.id, s.monitor_id
-            FROM event_log e
-            INNER JOIN screenshot s ON e.log_id = s.id
-            WHERE e.kind = ? AND e.date = ?
-            ORDER BY e.timestamp
-            "#
-        )
-        .bind(KIND)
-        .bind(date)
-        .fetch_all(&pool)
-        .await
-        .unwrap_or(Vec::new())
-        .iter()
-        .map(|row| {
-            let (event_id, timestamp, timeframe, date, _kind, _log_id,
-                id, monitor_id,
-                ) = row;
-            ScreenshotLog {
-                id: *id,
-                event_id: *event_id,
-                timestamp: *timestamp,
-                timeframe: *timeframe,
-                date: date.clone(),
-                monitor_id: *monitor_id,
-            }
-        })
-        .collect();
-        // debug!("list_screenshots: screenshot_logs: {:?}", screenshot_logs);
-
-        db::partition_logs(screenshot_logs, &local_time, interval)
     }
 
     pub async fn get_screenshots_for(&self, timeframe: i64) -> Result<Vec<String>> {
@@ -393,13 +340,8 @@ fn check_iss_uri(uri: &str) -> bool {
 }
 
 #[tauri::command]
-pub async fn list_screenshots(screenshot_plugin: State<'_, ScreenshotPlugin>, timestamp: i64, interval: db::Interval) -> Result<Vec<(String, Vec<ScreenshotLog>)>, String> {
-    screenshot_plugin.list_screenshots(timestamp, interval).await.map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn list_screenshots_on(screenshot_plugin: State<'_, ScreenshotPlugin>, date: String) -> Result<Vec<ScreenshotLog>, String> {
-    screenshot_plugin.list_screenshots_on(date).await.map_err(|e| e.to_string())
+pub async fn list_screenshot_logs_on(screenshot_plugin: State<'_, ScreenshotPlugin>, date: String) -> Result<Vec<ScreenshotLog>, String> {
+    screenshot_plugin.list_screenshot_logs_on(date).await.map_err(|e| e.to_string())
 }
 
 pub async fn get_screenshots_for(screenshot_plugin: State<'_, ScreenshotPlugin>, timeframe: i64) -> Result<Vec<String>, String> {

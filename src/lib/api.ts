@@ -36,14 +36,6 @@ export async function listDates(): Promise<string[]> {
   return await invoke("plugin:immicdb|list_eventlog_dates");
 }
 
-export async function listApplicationLogs(timestamp: number, interval: Interval): Promise<[string, ApplicationLog[]][]> {
-  return await invoke("plugin:application|list_application_logs", { timestamp, interval });
-}
-
-export async function listBrowserLogs(timestamp: number, interval: Interval): Promise<[string, BrowserLog[]][]> {
-  return await invoke("plugin:browser|list_browser_logs", { timestamp, interval });
-}
-
 export type HitsPerDay = {
   date: string;
   hits: number;
@@ -62,29 +54,58 @@ export async function searchLogs(query: string): Promise<SearchLogsResults> {
   return await invoke("plugin:search|search_logs", { query });
 }
 
-export async function listFileLogs(timestamp: number, interval: Interval): Promise<[string, FileLog[]][]> {
-  return await invoke("plugin:filelog|list_file_logs", { timestamp, interval });
-}
-
-export async function listScreenshots(timestamp: number, interval: Interval): Promise<[string, ScreenshotLog[]][]> {
-  return await invoke("plugin:screenshot|list_screenshots", { timestamp, interval });
-}
-
-export async function listTimeline(timestamp: number, interval: Interval): Promise<[string, [ScreenshotLog[], ApplicationLog[], BrowserLog[], FileLog[]]][]> {
-  const applicationLogs = new Map(await listApplicationLogs(timestamp, interval));
-  const browserLogs = new Map(await listBrowserLogs(timestamp, interval));
-  const fileLogs = new Map(await listFileLogs(timestamp, interval));
-  const screenshots = new Map(await listScreenshots(timestamp, interval));
-
-  const hours = Array.from(new Set([...applicationLogs.keys(), ...browserLogs.keys(), ...fileLogs.keys(), ...screenshots.keys()])).sort();
+export async function listTimelineOn(date: string): Promise<[string, [ScreenshotLog[], ApplicationLog[], BrowserLog[], FileLog[]]][]> {
+  let [application_logs, browser_logs, file_logs, screenshot_logs] = await listAnyLogsOn(date);
+  let application_logs_map = partitionLogHourly(application_logs);
+  let browser_logs_map = partitionLogHourly(browser_logs);
+  let file_logs_map = partitionLogHourly(file_logs);
+  let screenshot_logs_map = partitionLogHourly(screenshot_logs);
+  const hours = Array.from(new Set([...application_logs_map.keys(), ...browser_logs_map.keys(), ...file_logs_map.keys(), ...screenshot_logs_map.keys()])).sort();
   let timeline: [string, [ScreenshotLog[], ApplicationLog[], BrowserLog[], FileLog[]]][] = hours.map((hour) => {
-    let apps = applicationLogs.get(hour) || [];
-    let brs = browserLogs.get(hour) || [];
-    let fls = fileLogs.get(hour) || [];
-    let scr = screenshots.get(hour) || [];
-    return [hour, [scr, apps, brs, fls]];
+    let apps = application_logs_map.get(hour) || [];
+    let brs = browser_logs_map.get(hour) || [];
+    let fls = file_logs_map.get(hour) || [];
+    let scr = screenshot_logs_map.get(hour) || [];
+    return [hour, [scr, apps, brs, fls]]; // scr is the first
   });
   return timeline;
+}
+
+async function listAnyLogsOn(date: string): Promise<[ApplicationLog[], BrowserLog[], FileLog[], ScreenshotLog[]]> {
+  type AnyLog = { ApplicationLogEntry: ApplicationLog } | { BrowserLogEntry: BrowserLog } | { FileLogEntry: FileLog } | { ScreenshotLogEntry: ScreenshotLog }
+
+  const any_logs = await invoke<AnyLog[]>("plugin:immicdb|list_any_logs_on", { date });
+  let application_logs: ApplicationLog[] = [];
+  let browser_logs: BrowserLog[] = [];
+  let file_logs: FileLog[] = [];
+  let screenshot_logs: ScreenshotLog[] = [];
+  for (let log of any_logs) {
+    // check if log is ApplicationLogEntry
+    if ("ApplicationLogEntry" in log) {
+      application_logs.push(log.ApplicationLogEntry);
+    } else if ("BrowserLogEntry" in log) {
+      browser_logs.push(log.BrowserLogEntry);
+    } else if ("FileLogEntry" in log) {
+      file_logs.push(log.FileLogEntry);
+    } else if ("ScreenshotLogEntry" in log) {
+      screenshot_logs.push(log.ScreenshotLogEntry);
+    }
+  }
+  return [application_logs, browser_logs, file_logs, screenshot_logs];
+}
+
+function partitionLogHourly<T extends { timestamp: number }>(logs: T[]): Map<string, T[]> {
+  let hourly_logs = new Map();
+  for (let log of logs) {
+    // convert timestamp to hour in localtime
+    let hour = new Date(log.timestamp * 1000).toLocaleDateString("en-US", { hour: "2-digit", hour12: false });
+    if (hourly_logs.has(hour)) {
+      hourly_logs.get(hour).push(log);
+    } else {
+      hourly_logs.set(hour, [log]);
+    }
+  }
+  return hourly_logs;
 }
 
 export function image_url(screenshot: ScreenshotLog): string {

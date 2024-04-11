@@ -22,10 +22,10 @@ use tauri::{
 };
 
 use crate::plugins::{
-    application::ApplicationLog,
-    browser::BrowserLog,
-    filelog::FileLog,
-    screenshot::ScreenshotLog,
+    application::{ApplicationPlugin, ApplicationLog},
+    browser::{BrowserPlugin, BrowserLog},
+    filelog::{FilelogPlugin, FileLog},
+    screenshot::{ScreenshotPlugin, ScreenshotLog},
     setting::SettingPlugin,
 };
 
@@ -36,7 +36,7 @@ pub fn init() -> TauriPlugin<Wry> {
     tauri::plugin::Builder::new("immicdb")
         .invoke_handler(tauri::generate_handler![
             list_eventlog_dates,
-            list_eventlog_on,
+            list_any_logs_on,
             export_logs,
         ])
         .setup(move |app| {
@@ -184,32 +184,24 @@ impl ImmicDb {
         Ok(dates)
     }
 
-    pub async fn list_eventlog_on(&self, date: String) -> Result<Vec<EventLog>> {
-        let pool = self.pool().await?;
-        let result: Vec<EventLog> = sqlx::query_as::<_, (i64, i64, String, String)>(
-            r#"
-            SELECT id, timestamp, date, kind
-            FROM event_log
-            WHERE date = ?
-            ORDER BY id
-            "#
-        )
-        .bind(date)
-        .fetch_all(&pool)
-        .await
-        .unwrap_or(Vec::new())
-        .iter()
-        .map(|row| {
-            let (id, timestamp, date, kind) = row;
-            EventLog {
-                id: *id,
-                timestamp: *timestamp,
-                date: date.clone(),
-                kind: kind.clone(),
-            }
-        })
-        .collect();
-        Ok(result)
+    pub async fn list_any_logs_on(&self, date: String) -> Result<Vec<AnyLog>> {
+        let application = self.app.state::<ApplicationPlugin>();
+        let application_logs = application.list_application_logs_on(date.clone()).await?;
+
+        let browser = self.app.state::<BrowserPlugin>();
+        let browser_logs = browser.list_browser_logs_on(date.clone()).await?;
+
+        let filelog = self.app.state::<FilelogPlugin>();
+        let file_logs = filelog.list_file_logs_on(date.clone()).await?;
+
+        let screenshot = self.app.state::<ScreenshotPlugin>();
+        let screenshot_logs = screenshot.list_screenshot_logs_on(date.clone()).await?;
+
+        Ok(application_logs.into_iter().map(AnyLog::ApplicationLogEntry)
+            .chain(browser_logs.into_iter().map(AnyLog::BrowserLogEntry))
+            .chain(file_logs.into_iter().map(AnyLog::FileLogEntry))
+            .chain(screenshot_logs.into_iter().map(AnyLog::ScreenshotLogEntry))
+            .collect())
     }
 
     pub async fn export_logs(&self, filename: String) -> Result<()> {
@@ -259,8 +251,8 @@ pub async fn list_eventlog_dates(db: State<'_, ImmicDb>) -> Result<Vec<String>, 
 }
 
 #[tauri::command]
-pub async fn list_eventlog_on(db: State<'_, ImmicDb>, date: String) -> Result<Vec<EventLog>, String> {
-    db.list_eventlog_on(date).await.map_err(|e| e.to_string())
+pub async fn list_any_logs_on(db: State<'_, ImmicDb>, date: String) -> Result<Vec<AnyLog>, String> {
+    db.list_any_logs_on(date).await.map_err(|e| e.to_string())
 }
 
 // Interval
@@ -320,11 +312,11 @@ pub fn partition_logs<T: Timestamp>(logs: Vec<T>, local_time: &DateTime<Local>, 
 // Export and Import
 
 #[derive(Debug, Deserialize, Serialize)]
-enum ExportLine {
-    ApplicationLogLine(ApplicationLog),
-    BrowserLogLine(BrowserLog),
-    FileLogLine(FileLog),
-    ScreenshotLogLine(ScreenshotLog),
+pub enum AnyLog {
+    ApplicationLogEntry(ApplicationLog),
+    BrowserLogEntry(BrowserLog),
+    FileLogEntry(FileLog),
+    ScreenshotLogEntry(ScreenshotLog),
 }
 
 #[tauri::command]

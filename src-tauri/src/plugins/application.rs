@@ -1,8 +1,8 @@
 use active_win_pos_rs::get_active_window;
 use anyhow::{anyhow, Context as _, Result};
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use futures::TryStreamExt;
-use log::{debug, error};
+use log::debug;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use sqlx;
@@ -18,7 +18,6 @@ pub const KIND: &str = "application";
 pub fn init() -> TauriPlugin<Wry> {
     plugin::Builder::new("application")
         .invoke_handler(tauri::generate_handler![
-            list_application_logs,
             list_application_logs_on,
             get_application_info,
         ])
@@ -244,74 +243,6 @@ impl ApplicationPlugin {
         Ok(application_logs)
     }
 
-    pub async fn list_application_logs(&self, timestamp: i64, interval: db::Interval) -> Result<Vec<(String, Vec<ApplicationLog>)>> {
-        let dt = DateTime::from_timestamp_millis(timestamp);
-        // debug!("list_application_logs: timestamp: {:?}, interval: {:?}", dt, interval);
-        if dt.is_none() {
-            error!("Invalid timestamp: {}", timestamp);
-            return Err(anyhow!("Invalid timestamp"));
-        };
-        let dt = dt.unwrap();
-
-        let local_time = dt.with_timezone(&chrono::Local);
-        let date = local_time.format("%Y%m%d").to_string();
-        // debug!("list_application_logs: date: {}", date);
-
-        let db = self.app.state::<db::ImmicDb>();
-        let pool = db.pool().await.unwrap();
-
-        let application_logs: Vec<ApplicationLog> = sqlx::query_as::<_, (
-            i64, i64, i64,
-            i64, Option<i64>, Option<String>, Option<i64>, Option<i64>, Option<i64>, Option<i64>,
-            i64, String, Option<String>,
-        )>(
-            r#"
-            SELECT
-            e.id, e.timestamp, e.timeframe,
-            a.id, a.process_id, a.title, a.x, a.y, a.width, a.height,
-            i.id, i.name, i.path
-            FROM event_log e
-            INNER JOIN application_log a ON e.log_id = a.id
-            INNER JOIN application_info i ON a.info_id = i.id
-            WHERE e.kind = ? AND e.date = ?
-            ORDER BY e.timestamp
-            "#
-        )
-        .bind(KIND)
-        .bind(&date)
-        .fetch_all(&pool)
-        .await
-        .unwrap_or(Vec::new())
-        .iter()
-        .map(|row| {
-            let (
-                event_id, timestamp, timeframe,
-                id, process_id, title, x, y, width, height,
-                info_id, name, path,
-            ) = row;
-            ApplicationLog {
-                id: *id,
-                event_id: *event_id,
-                timestamp: *timestamp,
-                timeframe: *timeframe,
-                date: date.clone(),
-                info_id: *info_id,
-                name: name.clone(),
-                path: path.clone(),
-                process_id: *process_id,
-                title: title.clone(),
-                x: *x,
-                y: *y,
-                width: *width,
-                height: *height,
-            }
-        })
-        .collect();
-        // debug!("list_applications: application_logs: {:?}", application_logs);
-
-        db::partition_logs(application_logs, &local_time, interval)
-    }
-
     pub async fn get_application_info(&self, app_id: i64) -> Result<ApplicationInfo> {
         debug!("get_application_info: app_id={}", app_id);
 
@@ -410,11 +341,6 @@ pub struct ApplicationInfo {
     pub id: i64,
     pub path: String,
     pub name: Option<String>,
-}
-
-#[tauri::command]
-pub async fn list_application_logs(application: State<'_, ApplicationPlugin>, timestamp: i64, interval: db::Interval) -> Result<Vec<(String, Vec<ApplicationLog>)>, String> {
-    application.list_application_logs(timestamp, interval).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]

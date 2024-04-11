@@ -1,5 +1,5 @@
-use anyhow::{anyhow, Context as _, Result};
-use chrono::{DateTime, Utc};
+use anyhow::{Context as _, Result};
+use chrono::Utc;
 use futures::TryStreamExt;
 use log::{debug, error, info};
 use notify_debouncer_full::{
@@ -62,7 +62,6 @@ static IGNORE_PAT: Lazy<Regex> = Lazy::new(|| {
 pub fn init() -> TauriPlugin<Wry> {
     plugin::Builder::new("filelog")
         .invoke_handler(tauri::generate_handler![
-            list_file_logs,
             list_file_logs_on,
             get_file_info,
         ])
@@ -309,72 +308,11 @@ impl FilelogPlugin {
                 timeframe,
                 date: date.clone(),
                 info_id,
-                path: path.clone(),
-                kind: kind.clone(),
+                path,
+                kind,
             });
         }
         Ok(filelogs)
-    }
-
-    pub async fn list_file_logs(&self, timestamp: i64, interval: db::Interval) -> Result<Vec<(String, Vec<FileLog>)>> {
-        let dt = DateTime::from_timestamp_millis(timestamp);
-        if dt.is_none() {
-            error!("Invalid timestamp: {}", timestamp);
-            return Err(anyhow!("Invalid timestamp"));
-        };
-        let dt = dt.unwrap();
-
-        let local_time = dt.with_timezone(&chrono::Local);
-        let date = local_time.format("%Y%m%d").to_string();
-        // debug!("list_filelogs: date: {}", date);
-
-        let db = self.app.state::<db::ImmicDb>();
-        let pool = db.pool().await.expect("db pool is not set");
-
-        let filelogs: Vec<FileLog> = sqlx::query_as::<_, (
-            i64, i64, i64,
-            i64, Option<String>,
-            i64, String,
-        )>(
-            r#"
-            SELECT
-            e.id, e.timestamp, e.timeframe,
-            f.id, f.kind,
-            i.id, i.path
-            FROM event_log e
-            INNER JOIN file_log f ON e.log_id = f.id
-            INNER JOIN file_info i ON f.info_id = i.id
-            WHERE e.kind = ? AND e.date = ?
-            ORDER BY e.timestamp
-            "#
-        )
-        .bind(KIND)
-        .bind(&date)
-        .fetch_all(&pool)
-        .await
-        .unwrap_or(Vec::new())
-        .iter()
-        .map(|row| {
-            let (
-                event_id, timestamp, timeframe,
-                id, kind,
-                info_id, path,
-            ) = row;
-            FileLog {
-                id: *id,
-                event_id: *event_id,
-                timestamp: *timestamp,
-                timeframe: *timeframe,
-                date: date.clone(),
-                info_id: *info_id,
-                path: path.clone(),
-                kind: kind.clone(),
-            }
-        })
-        .collect();
-        // debug!("list_filelogs: filelogs: {:?}", filelogs);
-
-        db::partition_logs(filelogs, &local_time, interval)
     }
 
     pub async fn get_file_info(&self, file_id: i64) -> Result<FileInfo> {
@@ -513,11 +451,6 @@ impl db::Timestamp for FileLog {
 pub struct FileInfo {
     pub id: i64,
     pub path: String,
-}
-
-#[tauri::command]
-pub async fn list_file_logs(file_log: State<'_, FilelogPlugin>, timestamp: i64, interval: db::Interval) -> Result<Vec<(String, Vec<FileLog>)>, String> {
-    file_log.list_file_logs(timestamp, interval).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
