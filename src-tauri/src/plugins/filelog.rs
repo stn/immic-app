@@ -1,5 +1,6 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context as _, Result};
 use chrono::{DateTime, Utc};
+use futures::TryStreamExt;
 use log::{debug, error, info};
 use notify_debouncer_full::{
     notify::{self, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher},
@@ -10,6 +11,7 @@ use notify_debouncer_full::{
 };
 use once_cell::sync::Lazy;
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::HashSet,
     fmt,
@@ -61,6 +63,7 @@ pub fn init() -> TauriPlugin<Wry> {
     plugin::Builder::new("filelog")
         .invoke_handler(tauri::generate_handler![
             list_file_logs,
+            list_file_logs_on,
             get_file_info,
         ])
         .setup(|app_handle| {
@@ -267,6 +270,52 @@ impl FilelogPlugin {
         Ok(log_id)
     }
 
+    pub async fn list_file_logs_on(&self, date: String) -> Result<Vec<FileLog>> {
+        let db = self.app.state::<db::ImmicDb>();
+        let pool = db.pool().await.context("db pool is not set")?;
+
+        let mut rows = sqlx::query_as::<_, (
+            i64, i64, i64,
+            i64, Option<String>,
+            i64, String,
+        )>(
+            r#"
+            SELECT
+            e.id, e.timestamp, e.timeframe,
+            f.id, f.kind,
+            i.id, i.path
+            FROM event_log e
+            INNER JOIN file_log f ON e.log_id = f.id
+            INNER JOIN file_info i ON f.info_id = i.id
+            WHERE e.kind = ? AND e.date = ?
+            ORDER BY e.timestamp
+            "#
+        )
+        .bind(KIND)
+        .bind(&date)
+        .fetch(&pool);
+
+        let mut filelogs = Vec::new();
+        while let Some(row) = rows.try_next().await? {
+            let (
+                event_id, timestamp, timeframe,
+                id, kind,
+                info_id, path,
+            ) = row;
+            filelogs.push(FileLog {
+                id,
+                event_id,
+                timestamp,
+                timeframe,
+                date: date.clone(),
+                info_id,
+                path: path.clone(),
+                kind: kind.clone(),
+            });
+        }
+        Ok(filelogs)
+    }
+
     pub async fn list_file_logs(&self, timestamp: i64, interval: db::Interval) -> Result<Vec<(String, Vec<FileLog>)>> {
         let dt = DateTime::from_timestamp_millis(timestamp);
         if dt.is_none() {
@@ -442,7 +491,7 @@ fn check_ignore(info: &FileEventInfo) -> bool {
     false
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct FileLog {
     pub id: i64,
     pub event_id: i64,
@@ -460,7 +509,7 @@ impl db::Timestamp for FileLog {
     }
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Serialize)]
 pub struct FileInfo {
     pub id: i64,
     pub path: String,
@@ -469,6 +518,11 @@ pub struct FileInfo {
 #[tauri::command]
 pub async fn list_file_logs(file_log: State<'_, FilelogPlugin>, timestamp: i64, interval: db::Interval) -> Result<Vec<(String, Vec<FileLog>)>, String> {
     file_log.list_file_logs(timestamp, interval).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn list_file_logs_on(file_log: State<'_, FilelogPlugin>, date: String) -> Result<Vec<FileLog>, String> {
+    file_log.list_file_logs_on(date).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]

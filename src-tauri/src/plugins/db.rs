@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Local, Timelike, Utc};
+use futures::TryStreamExt;
 use log::debug;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -20,7 +21,13 @@ use tauri::{
     plugin::TauriPlugin,
 };
 
-use crate::plugins::setting::SettingPlugin;
+use crate::plugins::{
+    application::ApplicationLog,
+    browser::BrowserLog,
+    filelog::FileLog,
+    screenshot::ScreenshotLog,
+    setting::SettingPlugin,
+};
 
 const DATABASE_FILE: &str = "immic.db";
 const DATA_DIR_SETTING: &str = "data-dir";
@@ -30,6 +37,7 @@ pub fn init() -> TauriPlugin<Wry> {
         .invoke_handler(tauri::generate_handler![
             list_eventlog_dates,
             list_eventlog_on,
+            export_logs,
         ])
         .setup(move |app| {
             debug!("immicdb plugin setup");
@@ -161,22 +169,19 @@ impl ImmicDb {
 
     pub async fn list_eventlog_dates(&self) -> Result<Vec<String>> {
         let pool = self.pool().await?;
-        let result: Vec<String> = sqlx::query_as::<_, (String,)>(r#"
+        let mut rows = sqlx::query_as::<_, (String,)>(r#"
             SELECT DISTINCT date
             FROM event_log
             ORDER BY date DESC
             "#
         )
-        .fetch_all(&pool)
-        .await
-        .unwrap_or(Vec::new())
-        .iter()
-        .map(|row| {
-            let (date,) = row;
-            date.clone()
-        })
-        .collect();
-        Ok(result)
+        .fetch(&pool);
+
+        let mut dates: Vec<String> = Vec::new();
+        while let Some((date,)) = rows.try_next().await? {
+            dates.push(date);
+        }
+        Ok(dates)
     }
 
     pub async fn list_eventlog_on(&self, date: String) -> Result<Vec<EventLog>> {
@@ -206,12 +211,41 @@ impl ImmicDb {
         .collect();
         Ok(result)
     }
+
+    pub async fn export_logs(&self, filename: String) -> Result<()> {
+        // let setting = self.app.state::<SettingPlugin>();
+        // let data_dir = setting.get(DATA_DIR_SETTING)?
+        //     .and_then(|v| v.as_str().map(|s| s.to_string()))
+        //     .map(PathBuf::from);
+        // if data_dir.is_none() {
+        //     return Err(anyhow!("{} is not set", DATA_DIR_SETTING));
+        // }
+        // let datetime = Local::now().format("%Y%m%d%H%M%S").to_string();
+        // let file_path = data_dir.unwrap().join(format!("immicdb-{}.jsonl", datetime));
+
+        let mut file = tokio::fs::File::create(filename).await?;
+
+        // let pool = self.pool().await?;
+        // let mut stream = sqlx::query_as::<_, ExportLine>(
+        //     r#"
+        //     SELECT id, timestamp, date, kind
+        //     FROM event_log
+        //     "#
+        // )
+        // .fetch(&pool);
+        // while let Some(row) = stream.try_next().await? {
+        //     let line = serde_json::to_string(&row)?;
+        //     file.write_all(line.as_bytes()).await?;
+        //     file.write_all(b"\n").await?;
+        // }
+        Ok(())
+    }
 }
 
 
 // EventLog
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct EventLog {
     pub id: i64,
     pub timestamp: i64,
@@ -254,6 +288,7 @@ pub fn partition_logs<T: Timestamp>(logs: Vec<T>, local_time: &DateTime<Local>, 
             let mut ts = local_time.with_hour(0).unwrap().with_minute(0).unwrap().with_second(0).unwrap().timestamp();
             for log in logs {
                 let log_timestamp = log.timestamp();
+                // can be happened when the timezone is changed
                 // assert!(log_timestamp >= ts, "log timestamp is less than ts: {} < {}", log_timestamp, ts);
                 if log_timestamp < ts + 3600 {
                     ls.push(log);
@@ -279,4 +314,20 @@ pub fn partition_logs<T: Timestamp>(logs: Vec<T>, local_time: &DateTime<Local>, 
             Err(anyhow!("Not implemented yet"))
         }
     }
+}
+
+
+// Export and Import
+
+#[derive(Debug, Deserialize, Serialize)]
+enum ExportLine {
+    ApplicationLogLine(ApplicationLog),
+    BrowserLogLine(BrowserLog),
+    FileLogLine(FileLog),
+    ScreenshotLogLine(ScreenshotLog),
+}
+
+#[tauri::command]
+pub async fn export_logs(db: State<'_, ImmicDb>, filename: String) -> Result<(), String> {
+    db.export_logs(filename).await.map_err(|e| e.to_string())
 }

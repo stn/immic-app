@@ -1,7 +1,9 @@
 use active_win_pos_rs::get_active_window;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context as _, Result};
 use chrono::{DateTime, Utc};
+use futures::TryStreamExt;
 use log::{debug, error};
+use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use sqlx;
 use tauri::{
@@ -17,6 +19,7 @@ pub fn init() -> TauriPlugin<Wry> {
     plugin::Builder::new("application")
         .invoke_handler(tauri::generate_handler![
             list_application_logs,
+            list_application_logs_on,
             get_application_info,
         ])
         .setup(|app_handle| {
@@ -189,6 +192,58 @@ impl ApplicationPlugin {
         Ok(log_id)
     }
 
+    pub async fn list_application_logs_on(&self, date: String) -> Result<Vec<ApplicationLog>> {
+        let db = self.app.state::<db::ImmicDb>();
+        let pool = db.pool().await.context("db pool is not set")?;
+
+        let mut rows = sqlx::query_as::<_, (
+            i64, i64, i64,
+            i64, Option<i64>, Option<String>, Option<i64>, Option<i64>, Option<i64>, Option<i64>,
+            i64, String, Option<String>,
+        )>(
+            r#"
+            SELECT
+            e.id, e.timestamp, e.timeframe,
+            a.id, a.process_id, a.title, a.x, a.y, a.width, a.height,
+            i.id, i.name, i.path
+            FROM event_log e
+            INNER JOIN application_log a ON e.log_id = a.id
+            INNER JOIN application_info i ON a.info_id = i.id
+            WHERE e.kind = ? AND e.date = ?
+            ORDER BY e.timestamp
+            "#
+        )
+        .bind(KIND)
+        .bind(&date)
+        .fetch(&pool);
+
+        let mut application_logs = Vec::new();
+        while let Some(row) = rows.try_next().await? {
+            let (
+                event_id, timestamp, timeframe,
+                id, process_id, title, x, y, width, height,
+                info_id, name, path,
+            ) = row;
+            application_logs.push(ApplicationLog {
+                id,
+                event_id,
+                timestamp,
+                timeframe,
+                date: date.clone(),
+                info_id,
+                name,
+                path,
+                process_id,
+                title,
+                x,
+                y,
+                width,
+                height,
+            });
+        }
+        Ok(application_logs)
+    }
+
     pub async fn list_application_logs(&self, timestamp: i64, interval: db::Interval) -> Result<Vec<(String, Vec<ApplicationLog>)>> {
         let dt = DateTime::from_timestamp_millis(timestamp);
         // debug!("list_application_logs: timestamp: {:?}, interval: {:?}", dt, interval);
@@ -326,7 +381,7 @@ async fn check_application() -> Option<WinInfo> {
 
 // ApplicationLog
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ApplicationLog {
     pub id: i64,
     pub event_id: i64,
@@ -350,7 +405,7 @@ impl db::Timestamp for ApplicationLog {
     }
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Serialize)]
 pub struct ApplicationInfo {
     pub id: i64,
     pub path: String,
@@ -360,6 +415,11 @@ pub struct ApplicationInfo {
 #[tauri::command]
 pub async fn list_application_logs(application: State<'_, ApplicationPlugin>, timestamp: i64, interval: db::Interval) -> Result<Vec<(String, Vec<ApplicationLog>)>, String> {
     application.list_application_logs(timestamp, interval).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn list_application_logs_on(application: State<'_, ApplicationPlugin>, date: String) -> Result<Vec<ApplicationLog>, String> {
+    application.list_application_logs_on(date).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]

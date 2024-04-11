@@ -4,9 +4,11 @@ use actix_web::{
     http, middleware, web,
     App, HttpServer,
 };
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context as _, Result};
 use chrono::DateTime;
+use futures::TryStreamExt;
 use log::{debug, error};
+use serde::{Deserialize, Serialize};
 use tauri::{
     plugin::{self, TauriPlugin},
     AppHandle, Manager, State, Wry,
@@ -27,6 +29,7 @@ pub fn init() -> TauriPlugin<Wry> {
     plugin::Builder::new("browser")
         .invoke_handler(tauri::generate_handler![
             list_browser_logs,
+            list_browser_logs_on,
             get_browser_info,
         ])
         .setup(|app_handle| {
@@ -108,6 +111,57 @@ impl BrowserPlugin {
         db.update_eventlog_logid(event_id , log_id).await?;
 
         Ok(log_id)
+    }
+
+    pub async fn list_browser_logs_on(&self, date: String) -> Result<Vec<BrowserLog>> {
+        let db = self.app.state::<ImmicDb>();
+        let pool = db.pool().await.context("db pool is not set")?;
+
+        let mut rows = sqlx::query_as::<_, (
+            i64, i64, i64,
+            i64, Option<String>, Option<String>, Option<i64>, Option<i64>, Option<i64>,
+            i64, String, Option<String>,
+        )>(
+            r#"
+            SELECT
+            e.id, e.timestamp, e.timeframe,
+            b.id, b.title, b.referrer, b.tab_id, b.opener_tab_id, b.window_id,
+            i.id, i.url, i.fav_icon_url
+            FROM event_log e
+            INNER JOIN browser_log b ON e.log_id = b.id
+            INNER JOIN browser_info i ON b.info_id = i.id
+            WHERE e.kind = ? AND e.date = ?
+            ORDER BY e.timestamp
+            "#
+        )
+        .bind(KIND)
+        .bind(&date)
+        .fetch(&pool);
+
+        let mut browserlogs = Vec::new();
+        while let Some(row) = rows.try_next().await? {
+            let (
+                event_id, timestamp, timeframe,
+                id, title, referrer, tab_id, opener_tab_id, window_id,
+                info_id, url, fav_icon_url,
+            ) = row;
+            browserlogs.push(BrowserLog {
+                id,
+                event_id,
+                timestamp,
+                timeframe,
+                date: date.clone(),
+                info_id,
+                url: url.clone(),
+                fav_icon_url: fav_icon_url.clone(),
+                title: title.clone(),
+                referrer: referrer.clone(),
+                tab_id,
+                opener_tab_id,
+                window_id,
+            });
+        }
+        Ok(browserlogs)
     }
 
     pub async fn list_browser_logs(&self, timestamp: i64, interval: db::Interval) -> Result<Vec<(String, Vec<BrowserLog>)>> {
@@ -205,7 +259,7 @@ impl BrowserPlugin {
     }
 }
 
-#[derive(Debug, PartialEq, serde::Deserialize)]
+#[derive(Debug, PartialEq, Deserialize)]
 #[allow(non_snake_case)]
 struct TabInfo {
   tabId: Option<i64>,
@@ -232,7 +286,7 @@ pub async fn browserlog(tab_info: web::Json<TabInfo>, data: web::Data<AppHandle>
     Ok("ok".to_string())
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct BrowserLog {
     pub id: i64,
     pub event_id: i64,
@@ -255,7 +309,7 @@ impl db::Timestamp for BrowserLog {
     }
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Serialize)]
 pub struct BrowserInfo {
     pub id: i64,
     pub url: String,
@@ -265,6 +319,11 @@ pub struct BrowserInfo {
 #[tauri::command]
 pub async fn list_browser_logs(browser: State<'_, BrowserPlugin>, timestamp: i64, interval: db::Interval) -> Result<Vec<(String, Vec<BrowserLog>)>, String> {
     browser.list_browser_logs(timestamp, interval).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn list_browser_logs_on(browser: State<'_, BrowserPlugin>, date: String) -> Result<Vec<BrowserLog>, String> {
+    browser.list_browser_logs_on(date).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
