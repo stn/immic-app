@@ -40,6 +40,10 @@ export async function exportLogs(filename: string): Promise<void> {
   return await invoke("plugin:immicdb|export_logs", { filename });
 }
 
+export async function importLogs(filename: string): Promise<void> {
+  return await invoke("plugin:immicdb|import_logs", { filename });
+}
+
 export type HitsPerDay = {
   date: string;
   hits: number;

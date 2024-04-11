@@ -1,5 +1,5 @@
 use anyhow::{Context as _, Result};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use futures::TryStreamExt;
 use log::{debug, error, info};
 use notify_debouncer_full::{
@@ -259,6 +259,61 @@ impl FilelogPlugin {
         .bind(event_id)
         .bind(info_id)
         .bind(&info.kind.to_string())
+        .execute(&pool)
+        .await?;
+
+        // Update event_log with log_id
+        let log_id = result.last_insert_rowid();
+        db.update_eventlog_logid(event_id , log_id).await?;
+
+        Ok(log_id)
+    }
+
+    pub async fn insert_file_log(&self, log: &FileLog) -> Result<i64> {
+        let timestamp = DateTime::from_timestamp(log.timestamp, 0).context("Invalid timestamp")?;
+
+        let db = self.app.state::<db::ImmicDb>();
+        let event_id = db.insert_eventlog(timestamp, KIND).await?;
+
+        let pool = db.pool().await.context("db pool is not set")?;
+        // Search file_info by path
+        let result = sqlx::query_as::<_, (i64,)>(
+            r#"
+            SELECT id
+            FROM file_info
+            WHERE path = ?
+            "#
+        )
+        .bind(&log.path)
+        .fetch_one(&pool)
+        .await;
+
+        let info_id = match result {
+            Ok((id,)) => id,
+            Err(_) => {
+                // Insert file_info for new path
+                let result = sqlx::query(
+                    r#"
+                    INSERT INTO file_info (path)
+                    VALUES (?)
+                    "#
+                )
+                .bind(&log.path)
+                .execute(&pool)
+                .await?;
+                result.last_insert_rowid()
+            }
+        };
+
+        let result = sqlx::query(
+            r#"
+            INSERT INTO file_log (event_id, info_id, kind)
+            VALUES (?, ?, ?)
+            "#
+        )
+        .bind(event_id)
+        .bind(info_id)
+        .bind(&log.kind)
         .execute(&pool)
         .await?;
 

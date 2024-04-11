@@ -116,14 +116,14 @@ impl ScreenshotPlugin {
                 break;
             }
             self.save_screenshot(&screenshot).await?;
-            self.insert_screenshot_log(&screenshot).await?;
+            self.insert_screenshot(&screenshot).await?;
 
             break; // save only the first screen for now
         }
         Ok(())
     }
 
-    async fn insert_screenshot_log(&self, screenshot: &Screenshot) -> Result<i64> {
+    async fn insert_screenshot(&self, screenshot: &Screenshot) -> Result<i64> {
         let db = self.app.state::<db::ImmicDb>();
         let event_id = db.insert_eventlog(screenshot.timestamp, KIND).await?;
 
@@ -151,6 +151,30 @@ impl ScreenshotPlugin {
         screenshot.image.save(path).expect("failed to save screenshot");
 
         Ok(())
+    }
+
+    pub async fn insert_screenshot_log(&self, log: &ScreenshotLog) -> Result<i64> {
+        let timestamp = DateTime::from_timestamp(log.timestamp, 0).context("Invalid timestamp")?;
+
+        let db = self.app.state::<db::ImmicDb>();
+        let event_id = db.insert_eventlog(timestamp, KIND).await?;
+
+        let pool = db.pool().await.context("db pool is not set")?;
+        let result = sqlx::query(
+            r#"
+            INSERT INTO screenshot (event_id, monitor_id)
+            VALUES (?, ?)
+            "#
+        )
+        .bind(event_id)
+        .bind(log.monitor_id)
+        .execute(&pool)
+        .await?;
+
+        // Update event_log with log_id
+        let log_id = result.last_insert_rowid();
+        db.update_eventlog_logid(event_id, log_id).await?;
+        Ok(log_id)
     }
 
     pub async fn list_screenshot_logs_on(&self, date: String) -> Result<Vec<ScreenshotLog>> {

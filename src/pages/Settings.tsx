@@ -20,7 +20,8 @@ import {
   settingSave,
   settingSet,
   quitApp,
-  exportLogs
+  exportLogs,
+  importLogs,
 } from "@/lib/api";
 
 function Settings() {
@@ -56,13 +57,24 @@ function Settings() {
     })();
   }
 
-  function saveLogs() {
+  function exportDatabase() {
     (async () => {
       const filename = await dialog.save({
         defaultPath: dataDir,
       });
       if (filename && typeof filename === "string" && filename !== "") {
         exportLogs(filename);
+      }
+    })();
+  }
+
+  function importBackup() {
+    (async () => {
+      const filename = await dialog.open({
+        defaultPath: dataDir,
+      });
+      if (filename && typeof filename === "string" && filename !== "") {
+        importLogs(filename);
       }
     })();
   }
@@ -195,10 +207,24 @@ function Settings() {
                               variant="outline"
                               onClick={(e) => {
                                 e.preventDefault();
-                                saveLogs()
+                                exportDatabase()
                               }}
                             >
                               Export
+                            </Button>
+                          </div>
+                          <div className="grid gap-3">
+                            <Label htmlFor="export-db">Import Backup</Label>
+                            <Button
+                              id="export-db"
+                              className="w-20"
+                              variant="outline"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                importBackup()
+                              }}
+                            >
+                              Import
                             </Button>
                           </div>
                         </div>

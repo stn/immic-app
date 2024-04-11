@@ -22,7 +22,12 @@ use tauri::{
 };
 use tokio::{
     fs::File,
-    io::{AsyncWriteExt, BufWriter},
+    io::{
+        AsyncBufReadExt,
+        AsyncWriteExt,
+        BufReader,
+        BufWriter,
+    },
 };
 
 use crate::plugins::{
@@ -42,6 +47,7 @@ pub fn init() -> TauriPlugin<Wry> {
             list_eventlog_dates,
             list_any_logs_on,
             export_logs,
+            import_logs,
         ])
         .setup(move |app| {
             debug!("immicdb plugin setup");
@@ -209,7 +215,11 @@ impl ImmicDb {
     }
 
     pub async fn export_logs(&self, filename: String) -> Result<()> {
-        let file = File::create(filename).await?;
+        let file = File::options()
+            .write(true)
+            .create_new(true)
+            .open(filename)
+            .await?;
         let mut writer = BufWriter::new(file);
         let dates = self.list_eventlog_dates().await?;
         for date in dates.into_iter() {
@@ -220,6 +230,47 @@ impl ImmicDb {
                 writer.write(b"\n").await?;
             }
             writer.flush().await?;
+        }
+
+        Ok(())
+    }
+
+    pub async fn import_logs(&self, filename: String) -> Result<()> {
+        debug!("import_logs: {}", filename);
+
+        let application = self.app.state::<ApplicationPlugin>();
+        let browser = self.app.state::<BrowserPlugin>();
+        let filelog = self.app.state::<FilelogPlugin>();
+        let screenshot = self.app.state::<ScreenshotPlugin>();
+
+        let file = File::open(filename).await?;
+        let mut reader = BufReader::new(file);
+
+        let mut last_application_log: Option<(i64, i64)> = None;
+
+        let mut line = String::new();
+        while reader.read_line(&mut line).await? > 0 {
+            let log: AnyLog = serde_json::from_str(&line)?;
+            match log {
+                AnyLog::ApplicationLogEntry(log) => {
+                    if log.ref_id.is_none() {
+                        let ids = application.insert_application_log(&log).await?;
+                        last_application_log.replace(ids);
+                    } else {
+                        application.insert_application_log_ref(&log, &last_application_log).await?;
+                    }
+                },
+                AnyLog::BrowserLogEntry(log) => {
+                    browser.insert_browser_log(&log).await?;
+                },
+                AnyLog::FileLogEntry(log) => {
+                    filelog.insert_file_log(&log).await?;
+                },
+                AnyLog::ScreenshotLogEntry(log) => {
+                    screenshot.insert_screenshot_log(&log).await?;
+                },
+            }
+            line.clear();
         }
 
         Ok(())
@@ -314,4 +365,9 @@ pub enum AnyLog {
 #[tauri::command]
 pub async fn export_logs(db: State<'_, ImmicDb>, filename: String) -> Result<(), String> {
     db.export_logs(filename).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn import_logs(db: State<'_, ImmicDb>, filename: String) -> Result<(), String> {
+    db.import_logs(filename).await.map_err(|e| e.to_string())
 }

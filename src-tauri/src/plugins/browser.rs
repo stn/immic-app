@@ -112,6 +112,66 @@ impl BrowserPlugin {
         Ok(log_id)
     }
 
+    pub async fn insert_browser_log(&self, log: &BrowserLog) -> Result<i64> {
+        let timestamp = DateTime::from_timestamp(log.timestamp, 0).context("Invalid timestamp")?;
+
+        let db = self.app.state::<ImmicDb>();
+        let event_id = db.insert_eventlog(timestamp, KIND).await?;
+
+        // Search browser_info by url
+        let pool = db.pool().await.context("db pool is not set")?;
+        let result = sqlx::query_as::<_, (i64,)>(
+            r#"
+            SELECT id
+            FROM browser_info
+            WHERE url = ?
+            "#
+        )
+        .bind(&log.url)
+        .fetch_one(&pool)
+        .await;
+
+        let info_id = match result {
+            Ok((id,)) => id,
+            Err(_) => {
+                let result = sqlx::query(
+                    r#"
+                    INSERT INTO browser_info (url, fav_icon_url)
+                    VALUES (?, ?)
+                    "#
+                )
+                .bind(&log.url)
+                .bind(&log.fav_icon_url)
+                .execute(&pool)
+                .await?;
+
+                result.last_insert_rowid()
+            }
+        };
+
+        let result = sqlx::query(
+            r#"
+            INSERT INTO browser_log (event_id, info_id, title, referrer, tab_id, opener_tab_id, window_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            "#
+        )
+        .bind(event_id)
+        .bind(info_id)
+        .bind(&log.title)
+        .bind(&log.referrer)
+        .bind(log.tab_id)
+        .bind(log.opener_tab_id)
+        .bind(log.window_id)
+        .execute(&pool)
+        .await?;
+
+        // Update event_log with log_id
+        let log_id = result.last_insert_rowid();
+        db.update_eventlog_logid(event_id , log_id).await?;
+
+        Ok(log_id)
+    }
+
     pub async fn list_browser_logs_on(&self, date: String) -> Result<Vec<BrowserLog>> {
         let db = self.app.state::<ImmicDb>();
         let pool = db.pool().await.context("db pool is not set")?;
