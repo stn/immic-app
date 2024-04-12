@@ -19,6 +19,10 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
+use sqlx::{
+    Pool,
+    sqlite::Sqlite,
+};
 use tauri::{
     plugin::{self, TauriPlugin},
     AppHandle, Manager, State, Wry,
@@ -269,13 +273,12 @@ impl FilelogPlugin {
         Ok(log_id)
     }
 
-    pub async fn insert_file_log(&self, log: &FileLog) -> Result<i64> {
+    pub async fn insert_file_log_with(&self, pool: &Pool<Sqlite>, log: &FileLog) -> Result<i64> {
         let timestamp = DateTime::from_timestamp(log.timestamp, 0).context("Invalid timestamp")?;
 
         let db = self.app.state::<db::ImmicDb>();
-        let event_id = db.insert_eventlog(timestamp, KIND).await?;
+        let event_id = db.insert_eventlog_with(pool, timestamp, KIND).await?;
 
-        let pool = db.pool().await.context("db pool is not set")?;
         // Search file_info by path
         let result = sqlx::query_as::<_, (i64,)>(
             r#"
@@ -285,7 +288,7 @@ impl FilelogPlugin {
             "#
         )
         .bind(&log.path)
-        .fetch_one(&pool)
+        .fetch_one(pool)
         .await;
 
         let info_id = match result {
@@ -299,7 +302,7 @@ impl FilelogPlugin {
                     "#
                 )
                 .bind(&log.path)
-                .execute(&pool)
+                .execute(pool)
                 .await?;
                 result.last_insert_rowid()
             }
@@ -314,12 +317,12 @@ impl FilelogPlugin {
         .bind(event_id)
         .bind(info_id)
         .bind(&log.kind)
-        .execute(&pool)
+        .execute(pool)
         .await?;
 
         // Update event_log with log_id
         let log_id = result.last_insert_rowid();
-        db.update_eventlog_logid(event_id , log_id).await?;
+        db.update_eventlog_logid_with(pool, event_id , log_id).await?;
 
         Ok(log_id)
     }

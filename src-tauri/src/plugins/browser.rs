@@ -9,6 +9,10 @@ use chrono::DateTime;
 use futures::TryStreamExt;
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
+use sqlx::{
+    Pool,
+    sqlite::Sqlite,
+};
 use tauri::{
     plugin::{self, TauriPlugin},
     AppHandle, Manager, State, Wry,
@@ -112,14 +116,13 @@ impl BrowserPlugin {
         Ok(log_id)
     }
 
-    pub async fn insert_browser_log(&self, log: &BrowserLog) -> Result<i64> {
+    pub async fn insert_browser_log_with(&self, pool: &Pool<Sqlite>, log: &BrowserLog) -> Result<i64> {
         let timestamp = DateTime::from_timestamp(log.timestamp, 0).context("Invalid timestamp")?;
 
         let db = self.app.state::<ImmicDb>();
-        let event_id = db.insert_eventlog(timestamp, KIND).await?;
+        let event_id = db.insert_eventlog_with(pool, timestamp, KIND).await?;
 
         // Search browser_info by url
-        let pool = db.pool().await.context("db pool is not set")?;
         let result = sqlx::query_as::<_, (i64,)>(
             r#"
             SELECT id
@@ -128,7 +131,7 @@ impl BrowserPlugin {
             "#
         )
         .bind(&log.url)
-        .fetch_one(&pool)
+        .fetch_one(pool)
         .await;
 
         let info_id = match result {
@@ -142,7 +145,7 @@ impl BrowserPlugin {
                 )
                 .bind(&log.url)
                 .bind(&log.fav_icon_url)
-                .execute(&pool)
+                .execute(pool)
                 .await?;
 
                 result.last_insert_rowid()
@@ -162,12 +165,12 @@ impl BrowserPlugin {
         .bind(log.tab_id)
         .bind(log.opener_tab_id)
         .bind(log.window_id)
-        .execute(&pool)
+        .execute(pool)
         .await?;
 
         // Update event_log with log_id
         let log_id = result.last_insert_rowid();
-        db.update_eventlog_logid(event_id , log_id).await?;
+        db.update_eventlog_logid_with(pool, event_id , log_id).await?;
 
         Ok(log_id)
     }
