@@ -239,7 +239,8 @@ impl ImmicDb {
             .open(filename)
             .await?;
         let mut writer = BufWriter::new(file);
-        let dates = self.list_eventlog_dates().await?;
+        let mut dates = self.list_eventlog_dates().await?;
+        dates.sort();
         for date in dates.into_iter() {
             let logs = self.list_any_logs_on(date).await?;
             for log in logs.into_iter() {
@@ -279,6 +280,7 @@ impl ImmicDb {
         let mut line = String::new();
         while reader.read_line(&mut line).await? > 0 {
             let log: AnyLog = serde_json::from_str(&line)?;
+            debug!("import {:?}", log);
             match log {
                 AnyLog::ApplicationLogEntry(log) => {
                     if log.ref_id.is_none() {
