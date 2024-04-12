@@ -268,7 +268,7 @@ impl FilelogPlugin {
 
         // Update event_log with log_id
         let log_id = result.last_insert_rowid();
-        db.update_eventlog_logid(event_id , log_id).await?;
+        // db.update_eventlog_logid(event_id , log_id).await?;
 
         Ok(log_id)
     }
@@ -322,7 +322,7 @@ impl FilelogPlugin {
 
         // Update event_log with log_id
         let log_id = result.last_insert_rowid();
-        db.update_eventlog_logid_with(pool, event_id , log_id).await?;
+        // db.update_eventlog_logid_with(pool, event_id , log_id).await?;
 
         Ok(log_id)
     }
@@ -332,20 +332,20 @@ impl FilelogPlugin {
         let pool = db.pool().await.context("db pool is not set")?;
 
         let mut rows = sqlx::query_as::<_, (
-            i64, i64, i64,
+            i64, i64,
             i64, Option<String>,
             i64, String,
         )>(
             r#"
             SELECT
-            e.id, e.timestamp, e.timeframe,
+            e.id, e.timestamp,
             f.id, f.kind,
             i.id, i.path
             FROM event_log e
-            INNER JOIN file_log f ON e.log_id = f.id
+            INNER JOIN file_log f ON e.id = f.event_id
             INNER JOIN file_info i ON f.info_id = i.id
             WHERE e.kind = ? AND e.date = ?
-            ORDER BY e.timestamp
+            ORDER BY e.id
             "#
         )
         .bind(KIND)
@@ -355,7 +355,7 @@ impl FilelogPlugin {
         let mut filelogs = Vec::new();
         while let Some(row) = rows.try_next().await? {
             let (
-                event_id, timestamp, timeframe,
+                event_id, timestamp,
                 id, kind,
                 info_id, path,
             ) = row;
@@ -363,7 +363,6 @@ impl FilelogPlugin {
                 id,
                 event_id,
                 timestamp,
-                timeframe,
                 date: date.clone(),
                 info_id,
                 path,
@@ -492,7 +491,6 @@ pub struct FileLog {
     pub id: i64,
     pub event_id: i64,
     pub timestamp: i64,
-    pub timeframe: i64,
     pub date: String,
     pub info_id: i64,
     pub path: String,

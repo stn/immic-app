@@ -162,7 +162,7 @@ impl ApplicationPlugin {
 
         // Update event_log with log_id
         let log_id = result.last_insert_rowid();
-        db.update_eventlog_logid(event_id, log_id).await?;
+        // db.update_eventlog_logid(event_id, log_id).await?;
 
         Ok((log_id, info_id))
     }
@@ -189,7 +189,7 @@ impl ApplicationPlugin {
 
         // Update event_log with log_id
         let log_id = result.last_insert_rowid();
-        db.update_eventlog_logid(event_id , log_id).await?;
+        // db.update_eventlog_logid(event_id , log_id).await?;
 
         Ok(log_id)
     }
@@ -252,7 +252,7 @@ impl ApplicationPlugin {
 
         // Update event_log with log_id
         let log_id = result.last_insert_rowid();
-        db.update_eventlog_logid_with(pool, event_id, log_id).await?;
+        // db.update_eventlog_logid_with(pool, event_id, log_id).await?;
 
         Ok((log_id, info_id))
     }
@@ -283,7 +283,7 @@ impl ApplicationPlugin {
 
         // Update event_log with log_id
         let log_id = result.last_insert_rowid();
-        db.update_eventlog_logid_with(pool, event_id, log_id).await?;
+        // db.update_eventlog_logid_with(pool, event_id, log_id).await?;
 
         Ok(log_id)
     }
@@ -293,13 +293,13 @@ impl ApplicationPlugin {
         let pool = db.pool().await.context("db pool is not set")?;
 
         let mut rows = sqlx::query_as::<_, (
-            i64, i64, i64,
+            i64, i64,
             i64, Option<i64>, Option<String>, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>,
             i64, String, Option<String>,
         )>(
             r#"
             SELECT
-            e.id, e.timestamp, e.timeframe,
+            e.id, e.timestamp,
             a.id,
             coalesce(a.process_id, a0.process_id) as process_id,
             coalesce(a.title, a0.title) as title,
@@ -310,11 +310,11 @@ impl ApplicationPlugin {
             a.ref_id,
             i.id, i.name, i.path
             FROM event_log e
-            INNER JOIN application_log a ON e.log_id = a.id
+            INNER JOIN application_log a ON e.id = a.event_id
             INNER JOIN application_info i ON a.info_id = i.id
-            LEFT JOIN application_log a0 ON a.ref_id is not null AND a.ref_id = a0.id
+            LEFT JOIN application_log a0 ON a.ref_id = a0.id
             WHERE e.kind = ? AND e.date = ?
-            ORDER BY e.timestamp
+            ORDER BY e.id
             "#
         )
         .bind(KIND)
@@ -324,7 +324,7 @@ impl ApplicationPlugin {
         let mut application_logs = Vec::new();
         while let Some(row) = rows.try_next().await? {
             let (
-                event_id, timestamp, timeframe,
+                event_id, timestamp,
                 id, process_id, title, x, y, width, height, ref_id,
                 info_id, name, path,
             ) = row;
@@ -332,7 +332,6 @@ impl ApplicationPlugin {
                 id,
                 event_id,
                 timestamp,
-                timeframe,
                 date: date.clone(),
                 info_id,
                 name,
@@ -423,7 +422,6 @@ pub struct ApplicationLog {
     pub id: i64,
     pub event_id: i64,
     pub timestamp: i64,
-    pub timeframe: i64,
     pub date: String,
     pub info_id: i64,
     pub name: String,

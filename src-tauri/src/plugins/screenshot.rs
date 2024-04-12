@@ -145,7 +145,7 @@ impl ScreenshotPlugin {
 
         // Update event_log with log_id
         let log_id = result.last_insert_rowid();
-        db.update_eventlog_logid(event_id, log_id).await?;
+        // db.update_eventlog_logid(event_id, log_id).await?;
         Ok(log_id)
     }
 
@@ -176,7 +176,7 @@ impl ScreenshotPlugin {
 
         // Update event_log with log_id
         let log_id = result.last_insert_rowid();
-        db.update_eventlog_logid_with(pool, event_id, log_id).await?;
+        // db.update_eventlog_logid_with(pool, event_id, log_id).await?;
         Ok(log_id)
     }
 
@@ -185,17 +185,17 @@ impl ScreenshotPlugin {
         let pool = db.pool().await.context("db pool is not set")?;
 
         let mut rows = sqlx::query_as::<_, (
-            i64, i64, i64, String, String, i64,
+            i64, i64, String, String,
             i64, i64
         )>(
             r#"
             SELECT
-            e.id, e.timestamp, e.timeframe, e.date, e.kind, e.log_id,
+            e.id, e.timestamp, e.date, e.kind,
             s.id, s.monitor_id
             FROM event_log e
-            INNER JOIN screenshot s ON e.log_id = s.id
+            INNER JOIN screenshot s ON e.id = s.event_id
             WHERE e.kind = ? AND e.date = ?
-            ORDER BY e.timestamp
+            ORDER BY e.id
             "#
         )
         .bind(KIND)
@@ -205,14 +205,13 @@ impl ScreenshotPlugin {
         let mut screenshot_logs = Vec::new();
         while let Some(row) = rows.try_next().await? {
             let (
-                event_id, timestamp, timeframe, date, _kind, _log_id,
+                event_id, timestamp, date, _kind,
                 id, monitor_id,
             ) = row;
             screenshot_logs.push(ScreenshotLog {
                 id,
                 event_id,
                 timestamp,
-                timeframe,
                 date,
                 monitor_id,
             });
@@ -220,36 +219,36 @@ impl ScreenshotPlugin {
         Ok(screenshot_logs)
     }
 
-    pub async fn get_screenshots_for(&self, timeframe: i64) -> Result<Vec<String>> {
-        let db = self.app.state::<db::ImmicDb>();
-        let pool = db.pool().await.expect("db pool is not set");
+    // pub async fn get_screenshots_for(&self, timeframe: i64) -> Result<Vec<String>> {
+    //     let db = self.app.state::<db::ImmicDb>();
+    //     let pool = db.pool().await.expect("db pool is not set");
 
-        let ss: Vec<String> = sqlx::query_as::<_, (i64, i64)>(
-            r#"
-            SELECT
-                e.timestamp,
-                s.monitor_id
-            FROM event_log e
-            INNER JOIN screenshot s ON e.log_id = s.id
-            WHERE e.kind = ? AND e.timeframe = ?
-            "#
-        )
-        .bind(KIND)
-        .bind(timeframe)
-        .fetch_all(&pool)
-        .await
-        .unwrap_or(Vec::new())
-        .iter()
-        .map(|(timestamp, monitor_id)| {
-            let ts = DateTime::from_timestamp(*timestamp, 0).unwrap();
-            let dir = image_dir_name(ts);
-            let filename = image_basename(ts, *monitor_id);
-            format!("{}/{}", dir, filename)
-        })
-        .collect();
+    //     let ss: Vec<String> = sqlx::query_as::<_, (i64, i64)>(
+    //         r#"
+    //         SELECT
+    //             e.timestamp,
+    //             s.monitor_id
+    //         FROM event_log e
+    //         INNER JOIN screenshot s ON e.log_id = s.id
+    //         WHERE e.kind = ? AND e.timeframe = ?
+    //         "#
+    //     )
+    //     .bind(KIND)
+    //     .bind(timeframe)
+    //     .fetch_all(&pool)
+    //     .await
+    //     .unwrap_or(Vec::new())
+    //     .iter()
+    //     .map(|(timestamp, monitor_id)| {
+    //         let ts = DateTime::from_timestamp(*timestamp, 0).unwrap();
+    //         let dir = image_dir_name(ts);
+    //         let filename = image_basename(ts, *monitor_id);
+    //         format!("{}/{}", dir, filename)
+    //     })
+    //     .collect();
 
-        Ok(ss)  
-    }
+    //     Ok(ss)  
+    // }
 }
 
 fn image_base_dir(app: &AppHandle) -> Result<PathBuf> {
@@ -317,7 +316,6 @@ pub struct ScreenshotLog {
     pub id: i64,
     pub event_id: i64,
     pub timestamp: i64,
-    pub timeframe: i64,
     pub date: String,
     pub monitor_id: i64,
 }
@@ -371,9 +369,9 @@ pub async fn list_screenshot_logs_on(screenshot_plugin: State<'_, ScreenshotPlug
     screenshot_plugin.list_screenshot_logs_on(date).await.map_err(|e| e.to_string())
 }
 
-pub async fn get_screenshots_for(screenshot_plugin: State<'_, ScreenshotPlugin>, timeframe: i64) -> Result<Vec<String>, String> {
-    screenshot_plugin.get_screenshots_for(timeframe).await.map_err(|e| e.to_string())
-}
+// pub async fn get_screenshots_for(screenshot_plugin: State<'_, ScreenshotPlugin>, timeframe: i64) -> Result<Vec<String>, String> {
+//     screenshot_plugin.get_screenshots_for(timeframe).await.map_err(|e| e.to_string())
+// }
 
 // Tests
 

@@ -93,16 +93,55 @@ impl BrowserPlugin {
             }
         };
 
+        // Search browser_info by referrer
+        let referrer_id = match &info.referrer {
+            Some(referrer) => {
+                if referrer.is_empty() {
+                    None
+                } else {
+                    let result = sqlx::query_as::<_, (i64,)>(
+                        r#"
+                        SELECT id
+                        FROM browser_info
+                        WHERE url = ?
+                        "#
+                    )
+                    .bind(referrer)
+                    .fetch_one(&pool)
+                    .await;
+
+                    let referrer_id = match result {
+                        Ok((id,)) => id,
+                        Err(_) => {
+                            let result = sqlx::query(
+                                r#"
+                                INSERT INTO browser_info (url)
+                                VALUES (?)
+                                "#
+                            )
+                            .bind(referrer)
+                            .execute(&pool)
+                            .await?;
+                            result.last_insert_rowid()
+                        }
+                    };
+
+                    Some(referrer_id)
+                }
+            },
+            None => None,
+        };
+
         let result = sqlx::query(
             r#"
-            INSERT INTO browser_log (event_id, info_id, title, referrer, tab_id, opener_tab_id, window_id)
+            INSERT INTO browser_log (event_id, info_id, title, referrer_id, tab_id, opener_tab_id, window_id)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             "#
         )
         .bind(event_id)
         .bind(info_id)
         .bind(info.title.as_ref())
-        .bind(info.referrer.as_ref())
+        .bind(referrer_id)
         .bind(info.tabId)
         .bind(info.openerTabId)
         .bind(info.windowId)
@@ -111,7 +150,7 @@ impl BrowserPlugin {
 
         // Update event_log with log_id
         let log_id = result.last_insert_rowid();
-        db.update_eventlog_logid(event_id , log_id).await?;
+        // db.update_eventlog_logid(event_id , log_id).await?;
 
         Ok(log_id)
     }
@@ -152,16 +191,56 @@ impl BrowserPlugin {
             }
         };
 
+        // Search browser_info by referrer
+        let referrer_id = match &log.referrer {
+            Some(referrer) => {
+                if referrer.is_empty() {
+                    None
+                } else {
+                    let result = sqlx::query_as::<_, (i64,)>(
+                        r#"
+                        SELECT id
+                        FROM browser_info
+                        WHERE url = ?
+                        "#
+                    )
+                    .bind(referrer)
+                    .fetch_one(pool)
+                    .await;
+
+                    let referrer_id = match result {
+                        Ok((id,)) => id,
+                        Err(_) => {
+                            let result = sqlx::query(
+                                r#"
+                                INSERT INTO browser_info (url)
+                                VALUES (?)
+                                "#
+                            )
+                            .bind(referrer)
+                            .execute(pool)
+                            .await?;
+
+                            result.last_insert_rowid()
+                        }
+                    };
+
+                    Some(referrer_id)
+                }
+            },
+            None => None,
+        };
+
         let result = sqlx::query(
             r#"
-            INSERT INTO browser_log (event_id, info_id, title, referrer, tab_id, opener_tab_id, window_id)
+            INSERT INTO browser_log (event_id, info_id, title, referrer_id, tab_id, opener_tab_id, window_id)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             "#
         )
         .bind(event_id)
         .bind(info_id)
         .bind(&log.title)
-        .bind(&log.referrer)
+        .bind(referrer_id)
         .bind(log.tab_id)
         .bind(log.opener_tab_id)
         .bind(log.window_id)
@@ -170,7 +249,7 @@ impl BrowserPlugin {
 
         // Update event_log with log_id
         let log_id = result.last_insert_rowid();
-        db.update_eventlog_logid_with(pool, event_id , log_id).await?;
+        // db.update_eventlog_logid_with(pool, event_id , log_id).await?;
 
         Ok(log_id)
     }
@@ -180,20 +259,23 @@ impl BrowserPlugin {
         let pool = db.pool().await.context("db pool is not set")?;
 
         let mut rows = sqlx::query_as::<_, (
-            i64, i64, i64,
-            i64, Option<String>, Option<String>, Option<i64>, Option<i64>, Option<i64>,
+            i64, i64,
+            i64, Option<String>, Option<i64>, Option<i64>, Option<i64>,
             i64, String, Option<String>,
+            Option<String>,
         )>(
             r#"
             SELECT
-            e.id, e.timestamp, e.timeframe,
-            b.id, b.title, b.referrer, b.tab_id, b.opener_tab_id, b.window_id,
-            i.id, i.url, i.fav_icon_url
+            e.id, e.timestamp,
+            b.id, b.title, b.tab_id, b.opener_tab_id, b.window_id,
+            i.id, i.url, i.fav_icon_url,
+            r.url
             FROM event_log e
-            INNER JOIN browser_log b ON e.log_id = b.id
+            INNER JOIN browser_log b ON e.id = b.event_id
             INNER JOIN browser_info i ON b.info_id = i.id
+            LEFT JOIN browser_info r ON b.referrer_id = r.id
             WHERE e.kind = ? AND e.date = ?
-            ORDER BY e.timestamp
+            ORDER BY e.id
             "#
         )
         .bind(KIND)
@@ -203,15 +285,15 @@ impl BrowserPlugin {
         let mut browserlogs = Vec::new();
         while let Some(row) = rows.try_next().await? {
             let (
-                event_id, timestamp, timeframe,
-                id, title, referrer, tab_id, opener_tab_id, window_id,
+                event_id, timestamp,
+                id, title, tab_id, opener_tab_id, window_id,
                 info_id, url, fav_icon_url,
+                referrer,
             ) = row;
             browserlogs.push(BrowserLog {
                 id,
                 event_id,
                 timestamp,
-                timeframe,
                 date: date.clone(),
                 info_id,
                 url,
@@ -288,7 +370,6 @@ pub struct BrowserLog {
     pub id: i64,
     pub event_id: i64,
     pub timestamp: i64,
-    pub timeframe: i64,
     pub date: String,
     pub info_id: i64,
     pub url: String,

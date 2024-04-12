@@ -161,41 +161,39 @@ impl ImmicDb {
     pub async fn insert_eventlog_with(&self, pool: &Pool<Sqlite>, datetime: DateTime<Utc>, kind: &str) -> Result<i64> {
         // timestamp to date string in local timezone
         let ts = datetime.timestamp();
-        let timeframe = ts / 60;
         let local_time = datetime.with_timezone(&chrono::Local);
         let date = local_time.format("%Y%m%d").to_string();
         let result = sqlx::query(
             r#"
-            INSERT INTO event_log (timestamp, timeframe, date, kind)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO event_log (timestamp, date, kind)
+            VALUES (?, ?, ?)
             "#
         )
         .bind(ts)
-        .bind(timeframe)
         .bind(date)
         .bind(kind)
         .execute(pool).await?;
         Ok(result.last_insert_rowid())
     }
 
-    pub async fn update_eventlog_logid(&self, id: i64, log_id: i64) -> Result<()> {
-        let pool = self.pool().await?;
-        self.update_eventlog_logid_with(&pool, id, log_id).await
-    }
+    // pub async fn update_eventlog_logid(&self, id: i64, log_id: i64) -> Result<()> {
+    //     let pool = self.pool().await?;
+    //     self.update_eventlog_logid_with(&pool, id, log_id).await
+    // }
 
-    pub async fn update_eventlog_logid_with(&self, pool: &Pool<Sqlite>, id: i64, log_id: i64) -> Result<()> {
-        sqlx::query(
-            r#"
-            UPDATE event_log
-            SET log_id = ?
-            WHERE id = ?
-            "#
-        )
-        .bind(log_id)
-        .bind(id)
-        .execute(pool).await?;
-        Ok(())
-    }
+    // pub async fn update_eventlog_logid_with(&self, pool: &Pool<Sqlite>, id: i64, log_id: i64) -> Result<()> {
+    //     sqlx::query(
+    //         r#"
+    //         UPDATE event_log
+    //         SET log_id = ?
+    //         WHERE id = ?
+    //         "#
+    //     )
+    //     .bind(log_id)
+    //     .bind(id)
+    //     .execute(pool).await?;
+    //     Ok(())
+    // }
 
     pub async fn list_eventlog_dates(&self) -> Result<Vec<String>> {
         let pool = self.pool().await?;
@@ -241,7 +239,8 @@ impl ImmicDb {
             .open(filename)
             .await?;
         let mut writer = BufWriter::new(file);
-        let dates = self.list_eventlog_dates().await?;
+        let mut dates = self.list_eventlog_dates().await?;
+        dates.sort();
         for date in dates.into_iter() {
             let logs = self.list_any_logs_on(date).await?;
             for log in logs.into_iter() {
@@ -281,6 +280,7 @@ impl ImmicDb {
         let mut line = String::new();
         while reader.read_line(&mut line).await? > 0 {
             let log: AnyLog = serde_json::from_str(&line)?;
+            debug!("import {:?}", log);
             match log {
                 AnyLog::ApplicationLogEntry(log) => {
                     if log.ref_id.is_none() {
