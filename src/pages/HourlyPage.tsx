@@ -136,10 +136,10 @@ function zipLogs(logs: [ScreenshotLog[], ApplicationLog[], BrowserLog[], FileLog
   const [screens, applications, browsers, filelogs] = logs;
 
   let timeframes = [...new Set([
-    ...screens.map((s) => s.timeframe),
-    ...applications.map((a) => a.timeframe),
-    ...browsers.map((b) => b.timeframe),
-    ...filelogs.map((f) => f.timeframe),
+    ...screens.map((s) => s.timestamp / 60 | 0),
+    ...applications.map((a) => a.timestamp / 60 | 0 + 1),
+    ...browsers.map((b) => b.timestamp / 60 | 0 + 1),
+    ...filelogs.map((f) => f.timestamp / 60 | 0 + 1),
   ])].sort();
 
   let zipped: [number, [ScreenshotLog[], ApplicationLog[], BrowserLog[], FileLog[]]][] = [];
@@ -151,25 +151,25 @@ function zipLogs(logs: [ScreenshotLog[], ApplicationLog[], BrowserLog[], FileLog
 
   for (let t of timeframes) {
     let scrs = [];
-    while (screenIndex < screens.length && screens[screenIndex].timeframe === t) {
+    while (screenIndex < screens.length && (screens[screenIndex].timestamp / 60 | 0) === t) {
       scrs.push(screens[screenIndex]);
       screenIndex++;
     }
 
     let apps = [];
-    while (appIndex < applications.length && applications[appIndex].timeframe === t) {
+    while (appIndex < applications.length && (applications[appIndex].timestamp / 60 | 0 + 1) === t) {
       apps.push(applications[appIndex]);
       appIndex++;
     }
 
     let brs = [];
-    while (browserIndex < browsers.length && browsers[browserIndex].timeframe === t) {
+    while (browserIndex < browsers.length && (browsers[browserIndex].timestamp / 60 | 0 + 1) === t) {
       brs.push(browsers[browserIndex]);
       browserIndex++;
     }
 
     let fls = [];
-    while (filelogIndex < filelogs.length && filelogs[filelogIndex].timeframe === t) {
+    while (filelogIndex < filelogs.length && (filelogs[filelogIndex].timestamp / 60 | 0 + 1) === t) {
       fls.push(filelogs[filelogIndex]);
       filelogIndex++;
     }

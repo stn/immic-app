@@ -9,7 +9,6 @@ export type ApplicationLog = {
     id: number
     event_id: number
     timestamp: number
-    timeframe: number
     date: string
     info_id: number
     name: string
@@ -33,7 +32,6 @@ export type BrowserLog = {
     id: number
     event_id: number
     timestamp: number
-    timeframe: number
     date: string
     info_id: number
     url: string
@@ -55,7 +53,6 @@ export type FileLog = {
     id: number
     event_id: number
     timestamp: number
-    timeframe: number
     date: string
     info_id: number
     path: string
@@ -66,7 +63,6 @@ export type ScreenshotLog = {
     id: number
     event_id: number
     timestamp: number
-    timeframe: number
     date: string
     monitor_id: number
 }

@@ -111,7 +111,7 @@ impl BrowserPlugin {
 
         // Update event_log with log_id
         let log_id = result.last_insert_rowid();
-        db.update_eventlog_logid(event_id , log_id).await?;
+        // db.update_eventlog_logid(event_id , log_id).await?;
 
         Ok(log_id)
     }
@@ -170,7 +170,7 @@ impl BrowserPlugin {
 
         // Update event_log with log_id
         let log_id = result.last_insert_rowid();
-        db.update_eventlog_logid_with(pool, event_id , log_id).await?;
+        // db.update_eventlog_logid_with(pool, event_id , log_id).await?;
 
         Ok(log_id)
     }
@@ -180,20 +180,20 @@ impl BrowserPlugin {
         let pool = db.pool().await.context("db pool is not set")?;
 
         let mut rows = sqlx::query_as::<_, (
-            i64, i64, i64,
+            i64, i64,
             i64, Option<String>, Option<String>, Option<i64>, Option<i64>, Option<i64>,
             i64, String, Option<String>,
         )>(
             r#"
             SELECT
-            e.id, e.timestamp, e.timeframe,
+            e.id, e.timestamp,
             b.id, b.title, b.referrer, b.tab_id, b.opener_tab_id, b.window_id,
             i.id, i.url, i.fav_icon_url
             FROM event_log e
-            INNER JOIN browser_log b ON e.log_id = b.id
+            INNER JOIN browser_log b ON e.id = b.event_id
             INNER JOIN browser_info i ON b.info_id = i.id
             WHERE e.kind = ? AND e.date = ?
-            ORDER BY e.timestamp
+            ORDER BY e.id
             "#
         )
         .bind(KIND)
@@ -203,7 +203,7 @@ impl BrowserPlugin {
         let mut browserlogs = Vec::new();
         while let Some(row) = rows.try_next().await? {
             let (
-                event_id, timestamp, timeframe,
+                event_id, timestamp,
                 id, title, referrer, tab_id, opener_tab_id, window_id,
                 info_id, url, fav_icon_url,
             ) = row;
@@ -211,7 +211,6 @@ impl BrowserPlugin {
                 id,
                 event_id,
                 timestamp,
-                timeframe,
                 date: date.clone(),
                 info_id,
                 url,
@@ -288,7 +287,6 @@ pub struct BrowserLog {
     pub id: i64,
     pub event_id: i64,
     pub timestamp: i64,
-    pub timeframe: i64,
     pub date: String,
     pub info_id: i64,
     pub url: String,
