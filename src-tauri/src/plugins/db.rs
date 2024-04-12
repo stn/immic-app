@@ -40,6 +40,7 @@ use crate::plugins::{
 
 const DATABASE_FILE: &str = "immic.db";
 const DATA_DIR_SETTING: &str = "data-dir";
+const IMPORT_DATABASE_FILE: &str = "immic-imported.db";
 
 pub fn init() -> TauriPlugin<Wry> {
     tauri::plugin::Builder::new("immicdb")
@@ -112,6 +113,14 @@ impl ImmicDb {
     }
 
     fn db_path(&self) -> Result<PathBuf> {
+        self.db_path_with(DATABASE_FILE)
+    }
+
+    fn import_db_path(&self) -> Result<PathBuf> {
+        self.db_path_with(IMPORT_DATABASE_FILE)
+    }
+
+    fn db_path_with(&self, database_file: &str) -> Result<PathBuf> {
         let setting = self.app.state::<SettingPlugin>();
         let data_dir = setting.get(DATA_DIR_SETTING)?
             .and_then(|v| v.as_str().map(|s| s.to_string()))
@@ -120,16 +129,20 @@ impl ImmicDb {
             return Err(anyhow!("{} is not set", DATA_DIR_SETTING));
         }
 
-        let db_path = data_dir.unwrap().join(DATABASE_FILE);
+        let db_path = data_dir.unwrap().join(database_file);
         Ok(db_path)
     }
 
     pub async fn migrate(&self) -> Result<()> {
-        debug!("migrate immicdb");
+        // debug!("migrate immicdb");
         let pool = self.pool().await?;
-        debug!("pool: {:?}", pool);
+        self.migrate_with(&pool).await?;
+        Ok(())
+    }
+
+    async fn migrate_with(&self, pool: &Pool<Sqlite>) -> Result<()> {
         sqlx::migrate!("./migrations")
-            .run(&pool)
+            .run(pool)
             .await?;
         Ok(())
     }
@@ -142,7 +155,10 @@ impl ImmicDb {
 
     pub async fn insert_eventlog(&self, datetime: DateTime<Utc>, kind: &str) -> Result<i64> {
         let pool = self.pool().await?;
+        self.insert_eventlog_with(&pool, datetime, kind).await
+    }
 
+    pub async fn insert_eventlog_with(&self, pool: &Pool<Sqlite>, datetime: DateTime<Utc>, kind: &str) -> Result<i64> {
         // timestamp to date string in local timezone
         let ts = datetime.timestamp();
         let timeframe = ts / 60;
@@ -158,12 +174,16 @@ impl ImmicDb {
         .bind(timeframe)
         .bind(date)
         .bind(kind)
-        .execute(&pool).await?;
+        .execute(pool).await?;
         Ok(result.last_insert_rowid())
     }
 
     pub async fn update_eventlog_logid(&self, id: i64, log_id: i64) -> Result<()> {
         let pool = self.pool().await?;
+        self.update_eventlog_logid_with(&pool, id, log_id).await
+    }
+
+    pub async fn update_eventlog_logid_with(&self, pool: &Pool<Sqlite>, id: i64, log_id: i64) -> Result<()> {
         sqlx::query(
             r#"
             UPDATE event_log
@@ -173,7 +193,7 @@ impl ImmicDb {
         )
         .bind(log_id)
         .bind(id)
-        .execute(&pool).await?;
+        .execute(pool).await?;
         Ok(())
     }
 
@@ -238,13 +258,23 @@ impl ImmicDb {
     pub async fn import_logs(&self, filename: String) -> Result<()> {
         debug!("import_logs: {}", filename);
 
+        let file = File::open(filename).await?;
+        let mut reader = BufReader::new(file);
+
         let application = self.app.state::<ApplicationPlugin>();
         let browser = self.app.state::<BrowserPlugin>();
         let filelog = self.app.state::<FilelogPlugin>();
         let screenshot = self.app.state::<ScreenshotPlugin>();
 
-        let file = File::open(filename).await?;
-        let mut reader = BufReader::new(file);
+        let path = self.import_db_path()?;
+        let options = SqliteConnectOptions::new()
+            .filename(path)
+            .create_if_missing(true)
+            .journal_mode(SqliteJournalMode::Wal)
+            .synchronous(SqliteSynchronous::Normal);
+        let pool = SqlitePoolOptions::new().connect_with(options).await?;
+
+        self.migrate_with(&pool).await?;
 
         let mut last_application_log: Option<(i64, i64)> = None;
 
@@ -254,24 +284,26 @@ impl ImmicDb {
             match log {
                 AnyLog::ApplicationLogEntry(log) => {
                     if log.ref_id.is_none() {
-                        let ids = application.insert_application_log(&log).await?;
+                        let ids = application.insert_application_log_with(&pool, &log).await?;
                         last_application_log.replace(ids);
                     } else {
-                        application.insert_application_log_ref(&log, &last_application_log).await?;
+                        application.insert_application_log_ref_with(&pool, &log, &last_application_log).await?;
                     }
                 },
                 AnyLog::BrowserLogEntry(log) => {
-                    browser.insert_browser_log(&log).await?;
+                    browser.insert_browser_log_with(&pool, &log).await?;
                 },
                 AnyLog::FileLogEntry(log) => {
-                    filelog.insert_file_log(&log).await?;
+                    filelog.insert_file_log_with(&pool, &log).await?;
                 },
                 AnyLog::ScreenshotLogEntry(log) => {
-                    screenshot.insert_screenshot_log(&log).await?;
+                    screenshot.insert_screenshot_log_with(&pool, &log).await?;
                 },
             }
             line.clear();
         }
+
+        pool.close().await;
 
         Ok(())
     }

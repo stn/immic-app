@@ -12,6 +12,10 @@ use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
 };
+use sqlx::{
+    Pool,
+    sqlite::Sqlite,
+};
 use tauri::{
     http, plugin::{self, TauriPlugin}, AppHandle, Manager, State, Wry};
 use xcap::Monitor;
@@ -153,13 +157,12 @@ impl ScreenshotPlugin {
         Ok(())
     }
 
-    pub async fn insert_screenshot_log(&self, log: &ScreenshotLog) -> Result<i64> {
+    pub async fn insert_screenshot_log_with(&self, pool: &Pool<Sqlite>, log: &ScreenshotLog) -> Result<i64> {
         let timestamp = DateTime::from_timestamp(log.timestamp, 0).context("Invalid timestamp")?;
 
         let db = self.app.state::<db::ImmicDb>();
-        let event_id = db.insert_eventlog(timestamp, KIND).await?;
+        let event_id = db.insert_eventlog_with(pool, timestamp, KIND).await?;
 
-        let pool = db.pool().await.context("db pool is not set")?;
         let result = sqlx::query(
             r#"
             INSERT INTO screenshot (event_id, monitor_id)
@@ -168,12 +171,12 @@ impl ScreenshotPlugin {
         )
         .bind(event_id)
         .bind(log.monitor_id)
-        .execute(&pool)
+        .execute(pool)
         .await?;
 
         // Update event_log with log_id
         let log_id = result.last_insert_rowid();
-        db.update_eventlog_logid(event_id, log_id).await?;
+        db.update_eventlog_logid_with(pool, event_id, log_id).await?;
         Ok(log_id)
     }
 

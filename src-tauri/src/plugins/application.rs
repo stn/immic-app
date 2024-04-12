@@ -5,7 +5,10 @@ use futures::TryStreamExt;
 use log::debug;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
-use sqlx;
+use sqlx::{
+    Pool,
+    sqlite::Sqlite,
+};
 use tauri::{
     plugin::{self, TauriPlugin},
     AppHandle, Manager, State, Wry,
@@ -191,17 +194,16 @@ impl ApplicationPlugin {
         Ok(log_id)
     }
 
-    pub async fn insert_application_log(&self, log: &ApplicationLog) -> Result<(i64, i64)> {
+    pub async fn insert_application_log_with(&self, pool: &Pool<Sqlite>, log: &ApplicationLog) -> Result<(i64, i64)> {
         assert!(log.ref_id.is_none(), "ref_id must be None");
 
         let timestamp = DateTime::from_timestamp(log.timestamp, 0).context("Invalid timestamp")?;
 
         // Insert event_log
         let db = self.app.state::<db::ImmicDb>();
-        let event_id = db.insert_eventlog(timestamp, KIND).await?;
+        let event_id = db.insert_eventlog_with(pool, timestamp, KIND).await?;
 
         // Search application_info by path
-        let pool = db.pool().await.context("db pool is not set")?;
         let result = sqlx::query_as::<_, (i64,)>(
             r#"
             SELECT id
@@ -210,7 +212,7 @@ impl ApplicationPlugin {
             "#
         )
         .bind(&log.path)
-        .fetch_one(&pool)
+        .fetch_one(pool)
         .await;
 
         let info_id = match result {
@@ -225,7 +227,7 @@ impl ApplicationPlugin {
                 )
                 .bind(&log.path)
                 .bind(&log.name)
-                .execute(&pool)
+                .execute(pool)
                 .await?;
                 result.last_insert_rowid()
             }
@@ -245,17 +247,17 @@ impl ApplicationPlugin {
         .bind(log.y)
         .bind(log.width)
         .bind(log.height)
-        .execute(&pool)
+        .execute(pool)
         .await?;
 
         // Update event_log with log_id
         let log_id = result.last_insert_rowid();
-        db.update_eventlog_logid(event_id, log_id).await?;
+        db.update_eventlog_logid_with(pool, event_id, log_id).await?;
 
         Ok((log_id, info_id))
     }
 
-    pub async fn insert_application_log_ref(&self, log: &ApplicationLog, last_ids: &Option<(i64, i64)>) -> Result<i64> {
+    pub async fn insert_application_log_ref_with(&self, pool: &Pool<Sqlite>, log: &ApplicationLog, last_ids: &Option<(i64, i64)>) -> Result<i64> {
         assert!(log.ref_id.is_some(), "ref_id must be Some");
         assert!(last_ids.is_some(), "last_ids must be Some");
 
@@ -265,9 +267,8 @@ impl ApplicationPlugin {
 
         // Insert event_log
         let db = self.app.state::<db::ImmicDb>();
-        let event_id = db.insert_eventlog(timestamp, KIND).await?;
+        let event_id = db.insert_eventlog_with(pool, timestamp, KIND).await?;
 
-        let pool = db.pool().await.unwrap();
         let result = sqlx::query(
             r#"
             INSERT INTO application_log (event_id, info_id, ref_id)
@@ -277,12 +278,12 @@ impl ApplicationPlugin {
         .bind(event_id)
         .bind(info_id)
         .bind(ref_id)
-        .execute(&pool)
+        .execute(pool)
         .await?;
 
         // Update event_log with log_id
         let log_id = result.last_insert_rowid();
-        db.update_eventlog_logid(event_id, log_id).await?;
+        db.update_eventlog_logid_with(pool, event_id, log_id).await?;
 
         Ok(log_id)
     }
