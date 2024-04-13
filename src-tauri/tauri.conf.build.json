@@ -1,6 +1,6 @@
 {
   "package": {
-    "productName": "Immic App"
+    "productName": "ImmicApp"
   },
   "tauri": {
     "bundle": {

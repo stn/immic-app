@@ -13,13 +13,17 @@ def update_version(file_path, new_version):
         content = re.sub(r'^version = "[^"]+"', f'version = "{new_version}"', content, flags=re.MULTILINE)
     elif 'src-tauri/tauri.conf.json' in file_path:
         content = re.sub(r'"version": "[^"]+"', f'"version": "{new_version}"', content)
-    path.write_text(content)
+    path.write_text(content, newline='\n')
 
     subprocess.run(["git", "add", file_path], check=True)
+    print(f"{file_path} has been updated to {new_version}.")
 
 def test_build():
     subprocess.run(["pnpm", "tauri", "build", "-c", "src-tauri/tauri.conf.build.json"], check=True)
+    subprocess.run(["git", "add", "pnpm-lock.yaml"], check=True)
+    subprocess.run(["git", "add", "src-tauri/Cargo.lock"], check=True)
     print("Build has been tested.")
+
 
 def set_git_tag(new_version):
     tag_name = f"v{new_version}"
