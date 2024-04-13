@@ -1,0 +1,10 @@
+{
+  "package": {
+    "productName": "ImmicApp"
+  },
+  "tauri": {
+    "bundle": {
+      "identifier": "io.immic"
+    }
+  }
+}
