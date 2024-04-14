@@ -134,6 +134,21 @@ impl FilelogPlugin {
 
             for info in infos.iter() {
                 debug!("file event info: {:?}", info);
+                
+                // check debounce
+                match self.check_debounce(&info).await {
+                    Ok(is_debounce) => {
+                        if is_debounce {
+                            debug!("filelog: debounced!");
+                            continue;
+                        }
+                    },
+                    Err(e) => {
+                        error!("Error on check debounce: {:?}", e);
+                        continue;
+                    },
+                }
+
                 match self.insert_info(info).await {
                     Ok(id) => {
                         debug!("filelog: inserted id: {:?}", id);
@@ -151,6 +166,7 @@ impl FilelogPlugin {
     fn async_watcher(&self) -> notify::Result<(Debouncer<RecommendedWatcher, FileIdMap>, mpsc::Receiver<Vec<FileEventInfo>>)> {
         let (tx, rx) = mpsc::channel(32);
 
+        // durationを大きくしすぎるとイベントの即時性が失われる。別途、logと比較して保存するかをチェックする。
         let debouncer = new_debouncer(Duration::from_secs(2), None, move |result: DebounceEventResult| {
             match result {
                 Ok(debounce_events) => {
@@ -225,35 +241,26 @@ impl FilelogPlugin {
 
         let path = info.path.to_string_lossy().to_string();
 
-        // Search file_info by path
-        let result = sqlx::query_as::<_, (i64,)>(
+        // Upsert file_info by path
+        let result = sqlx::query(
             r#"
-            SELECT id
-            FROM file_info
-            WHERE path = ?
+            INSERT OR REPLACE INTO file_info (id, path, last_update)
+            VALUES (
+                (SELECT id FROM file_info WHERE path = ?),
+                ?,
+                ?
+            );
             "#
         )
         .bind(&path)
-        .fetch_one(&pool)
-        .await;
+        .bind(&path)
+        .bind(timestamp.timestamp())
+        .execute(&pool)
+        .await?;
 
-        let info_id = match result {
-            Ok((id,)) => id,
-            Err(_) => {
-                // Insert file_info for new path
-                let result = sqlx::query(
-                    r#"
-                    INSERT INTO file_info (path)
-                    VALUES (?)
-                    "#
-                )
-                .bind(&path)
-                .execute(&pool)
-                .await?;
-                result.last_insert_rowid()
-            }
-        };
+        let info_id = result.last_insert_rowid();
 
+        // Insert file_log
         let result = sqlx::query(
             r#"
             INSERT INTO file_log (event_id, info_id, kind)
@@ -266,10 +273,7 @@ impl FilelogPlugin {
         .execute(&pool)
         .await?;
 
-        // Update event_log with log_id
         let log_id = result.last_insert_rowid();
-        // db.update_eventlog_logid(event_id , log_id).await?;
-
         Ok(log_id)
     }
 
@@ -279,35 +283,26 @@ impl FilelogPlugin {
         let db = self.app.state::<db::ImmicDb>();
         let event_id = db.insert_eventlog_with(pool, timestamp, KIND).await?;
 
-        // Search file_info by path
-        let result = sqlx::query_as::<_, (i64,)>(
+        // Upsert file_info by path
+        let result = sqlx::query(
             r#"
-            SELECT id
-            FROM file_info
-            WHERE path = ?
+            INSERT OR REPLACE INTO file_info (id, path, last_update)
+            VALUES (
+                (SELECT id FROM file_info WHERE path = ?),
+                ?,
+                ?
+            );
             "#
         )
         .bind(&log.path)
-        .fetch_one(pool)
-        .await;
+        .bind(&log.path)
+        .bind(timestamp.timestamp())
+        .execute(pool)
+        .await?;
 
-        let info_id = match result {
-            Ok((id,)) => id,
-            Err(_) => {
-                // Insert file_info for new path
-                let result = sqlx::query(
-                    r#"
-                    INSERT INTO file_info (path)
-                    VALUES (?)
-                    "#
-                )
-                .bind(&log.path)
-                .execute(pool)
-                .await?;
-                result.last_insert_rowid()
-            }
-        };
+        let info_id = result.last_insert_rowid();
 
+        // Insert file_log
         let result = sqlx::query(
             r#"
             INSERT INTO file_log (event_id, info_id, kind)
@@ -320,10 +315,7 @@ impl FilelogPlugin {
         .execute(pool)
         .await?;
 
-        // Update event_log with log_id
         let log_id = result.last_insert_rowid();
-        // db.update_eventlog_logid_with(pool, event_id , log_id).await?;
-
         Ok(log_id)
     }
 
@@ -334,13 +326,13 @@ impl FilelogPlugin {
         let mut rows = sqlx::query_as::<_, (
             i64, i64,
             i64, Option<String>,
-            i64, String,
+            i64, String, Option<i64>,
         )>(
             r#"
             SELECT
             e.id, e.timestamp,
             f.id, f.kind,
-            i.id, i.path
+            i.id, i.path, i.last_update
             FROM event_log e
             INNER JOIN file_log f ON e.id = f.event_id
             INNER JOIN file_info i ON f.info_id = i.id
@@ -357,7 +349,7 @@ impl FilelogPlugin {
             let (
                 event_id, timestamp,
                 id, kind,
-                info_id, path,
+                info_id, path, last_update,
             ) = row;
             filelogs.push(FileLog {
                 id,
@@ -367,6 +359,7 @@ impl FilelogPlugin {
                 info_id,
                 path,
                 kind,
+                last_update,
             });
         }
         Ok(filelogs)
@@ -378,9 +371,9 @@ impl FilelogPlugin {
         let db = self.app.state::<db::ImmicDb>();
         let pool = db.pool().await.expect("db pool is not set");
 
-        let result = sqlx::query_as::<_, (i64, String)>(
+        let result = sqlx::query_as::<_, (i64, String, Option<i64>)>(
             r#"
-            SELECT id, path
+            SELECT id, path, last_update
             FROM file_info
             WHERE id = ?
             "#
@@ -390,10 +383,11 @@ impl FilelogPlugin {
         .await;
 
         match result {
-            Ok((id, path)) => {
+            Ok((id, path, last_update)) => {
                 Ok(FileInfo {
-                    id: id,
-                    path: path,
+                    id,
+                    path,
+                    last_update,
                 })
             },
             Err(_) => {
@@ -401,6 +395,36 @@ impl FilelogPlugin {
             }
         }
     }
+
+    async fn check_debounce(&self, info: &FileEventInfo) -> Result<bool> {
+        let timestamp = Utc::now().timestamp();
+
+        let db = self.app.state::<db::ImmicDb>();
+        let pool = db.pool().await.context("db pool is not set")?;
+
+        let (last_update,) = sqlx::query_as::<_, (Option<i64>,)>(
+            r#"
+            SELECT last_update
+            FROM file_info
+            WHERE path = ?
+            "#
+        )
+        .bind(&info.path.to_string_lossy().to_string())
+        .fetch_one(&pool)
+        .await?;
+
+        if last_update.is_none() {
+            return Ok(false);
+        }
+
+        let last_update = last_update.unwrap();
+        if timestamp - last_update < 60 {
+            return Ok(true);
+        }
+
+        Ok(false)
+    }
+
 }
 
 #[derive(Debug,PartialEq)]
@@ -495,6 +519,7 @@ pub struct FileLog {
     pub info_id: i64,
     pub path: String,
     pub kind: Option<String>,
+    pub last_update: Option<i64>,
 }
 
 impl db::Timestamp for FileLog {
@@ -507,6 +532,7 @@ impl db::Timestamp for FileLog {
 pub struct FileInfo {
     pub id: i64,
     pub path: String,
+    pub last_update: Option<i64>,
 }
 
 #[tauri::command]
