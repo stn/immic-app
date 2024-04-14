@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import {
@@ -18,19 +18,23 @@ import {
   FileLog,
   ScreenshotLog
 } from "@/lib/events";
-import { time } from "console";
 
 function HourlyPage() {
   const params = useParams();
 
   const [timeline, setTimeline] = useState<[string, [ScreenshotLog[], ApplicationLog[], BrowserLog[], FileLog[]]][]>();
   const [screenUrl, setScreenUrl] = useState<string>("");
+  const [visibleContent, setVisibleContent] = useState<boolean>(true);
 
-  const setTimeframe = (_timeframe: number, screens: ScreenshotLog[]) => {
+  const setTimeframe = useCallback((_timeframe: number, screens: ScreenshotLog[]) => {
     if (screens.length > 0) {
       setScreenUrl(image_url(screens[0]));
     }
-  };
+  }, [setScreenUrl]);
+
+  const toggleVisibleContent = useCallback(() => {
+    setVisibleContent(!visibleContent);
+  }, [visibleContent, setVisibleContent]);
 
   useEffect(() => {
     let isMounted = true;
@@ -58,7 +62,7 @@ function HourlyPage() {
     <div
       style={{ "backgroundImage": `url(${screenUrl})` } as React.CSSProperties}
       className="bg-fixed bg-contain bg-center bg-no-repeat"
-      >
+    >
       <div className="sticky top-0 pb-2 bg-transparent/20">
         <h1 className="text-4xl font-semibold mb-6 bg-black">
           <Link to="/">
@@ -66,80 +70,92 @@ function HourlyPage() {
           </Link>
         </h1>
       </div>
-      <div className="mt-20 bg-transparent/20">
-        { timeline && timeline.map(([hour, [screens, applications, browsers, filelogs]]) => (
-          <div key={hour} className="my-4">
-            <h2 className="text-4xl font-semibold mb-2">
-              {hour}:00
-            </h2>
-            { zipLogs([screens, applications, browsers, filelogs]).map(([timeframe, [screens, applications, browsers, filelogs]]) => (
-              <div
-               key={timeframe}
-               className="grid grid-cols-3 gap-4 hover:bg-transparent/80"
-               onMouseEnter={() => setTimeframe(timeframe, screens)}
-               >
-                <div className="w-96 col-start-1">
-                  {applications.map((app) => (
-                    <div key={app.id}>
-                      <div>{app.name}</div>
-                      <div className="pl-4">{app.title}</div>
-                      {/* {JSON.stringify(app)} */}
+      <div
+        className="mt-20"
+        onClick={() => { toggleVisibleContent(); }}
+      >
+        { !visibleContent && (
+          <div className="h-screen bg-transparent">
+            &nbsp;
+          </div>
+        )}
+        { visibleContent && (
+          <div className="bg-transparent/60">
+            { timeline && timeline.map(([hour, [screens, applications, browsers, filelogs]]) => (
+              <div key={hour} className="my-4">
+                <h2 className="text-4xl font-semibold mb-2">
+                  {hour}:00
+                </h2>
+                { zipLogs([screens, applications, browsers, filelogs]).map(([timeframe, [screens, applications, browsers, filelogs]]) => (
+                  <div
+                  key={timeframe}
+                  className="grid grid-cols-3 gap-4 hover:bg-transparent/80"
+                  onMouseEnter={() => setTimeframe(timeframe, screens)}
+                  >
+                    <div className="w-96 col-start-1">
+                      {applications.map((app) => (
+                        <div key={app.id}>
+                          <div>{app.name}</div>
+                          <div className="pl-4">{app.title}</div>
+                          {/* {JSON.stringify(app)} */}
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-                <div className="w-96 col-start-2">
-                  <ul className="list-disc">
-                    {browsers.map((browser) => (
-                      <li key={browser.id}>
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger>
-                              <div className="text-left">
-                                {/* <img src={browser.fav_icon_url} alt="favicon" /> */}
-                                <a href={browser.url} target="_blank" rel="noopener noreferrer"
-                                  className="decoration-1 underline-offset-2 hover:underline"
-                                >
-                                  {browser.title}
-                                </a>
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent side="bottom">
-                              {browser.url}
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                        {/* {JSON.stringify(browser)} */}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                  <div className="w-96 col-start-3">
-                    {filelogs.map((filelog) => (
-                      <div key={filelog.id}>
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger>
-                              <div className="text-left">
-                                {timestamp_str(filelog.timestamp)}
-                                {filelog.kind === "create" ? "🗒️" :
-                                filelog.kind === "modify" ? "📝" : 
-                                filelog.kind === "remove" ? "🗑️" :
-                                "?"}&nbsp;{filename(filelog.path)}
-                                {/* {JSON.stringify(filelog)} */}
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent side="bottom">
-                              {filelog.path}
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
+                    <div className="w-96 col-start-2">
+                      <ul className="list-disc">
+                        {browsers.map((browser) => (
+                          <li key={browser.id}>
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger>
+                                  <div className="text-left">
+                                    {/* <img src={browser.fav_icon_url} alt="favicon" /> */}
+                                    <a href={browser.url} target="_blank" rel="noopener noreferrer"
+                                      className="decoration-1 underline-offset-2 hover:underline"
+                                    >
+                                      {browser.title}
+                                    </a>
+                                  </div>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom">
+                                  {browser.url}
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                            {/* {JSON.stringify(browser)} */}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                      <div className="w-96 col-start-3">
+                        {filelogs.map((filelog) => (
+                          <div key={filelog.id}>
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger>
+                                  <div className="text-left">
+                                    {timestamp_str(filelog.timestamp)}
+                                    {filelog.kind === "create" ? "🗒️" :
+                                    filelog.kind === "modify" ? "📝" : 
+                                    filelog.kind === "remove" ? "🗑️" :
+                                    "?"}&nbsp;{filename(filelog.path)}
+                                    {/* {JSON.stringify(filelog)} */}
+                                  </div>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom">
+                                  {filelog.path}
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          </div>
+                        ))}
                       </div>
-                    ))}
                   </div>
+                ))}
               </div>
             ))}
           </div>
-        ))}
+        )}
       </div>
     </div>
   );
