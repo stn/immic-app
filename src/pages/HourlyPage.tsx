@@ -95,21 +95,22 @@ function HourlyPage() {
                     <div className="w-96 col-start-1">
                       {applications.map((app) => (
                         <div key={app.id}>
-                          <div>{app.name}</div>
-                          <div className="pl-4">{app.title}</div>
+                          <div>{timestamp_mm(app.timestamp)} {app.name}</div>
+                          <div className="pl-6">{app.title}</div>
                           {/* {JSON.stringify(app)} */}
                         </div>
                       ))}
                     </div>
                     <div className="w-96 col-start-2">
-                      <ul className="list-disc">
+                      <ul className="list-none ml-10">
                         {browsers.map((browser) => (
                           <li key={browser.id}>
                             <TooltipProvider>
                               <Tooltip>
                                 <TooltipTrigger>
-                                  <div className="text-left">
+                                  <div className="text-left -indent-10">
                                     {/* <img src={browser.fav_icon_url} alt="favicon" /> */}
+                                    {timestamp_mmss(browser.timestamp)}&nbsp;
                                     <a href={browser.url} target="_blank" rel="noopener noreferrer"
                                       className="decoration-1 underline-offset-2 hover:underline"
                                     >
@@ -127,14 +128,15 @@ function HourlyPage() {
                         ))}
                       </ul>
                     </div>
-                      <div className="w-96 col-start-3">
+                    <div className="w-96 col-start-3">
+                      <div className="ml-10">
                         {filelogs.map((filelog) => (
                           <div key={filelog.id}>
                             <TooltipProvider>
                               <Tooltip>
                                 <TooltipTrigger>
-                                  <div className="text-left">
-                                    {timestamp_str(filelog.timestamp)}
+                                  <div className="text-left -indent-10">
+                                    {timestamp_mmss(filelog.timestamp)}
                                     {filelog.kind === "create" ? "🗒️" :
                                     filelog.kind === "modify" ? "📝" : 
                                     filelog.kind === "remove" ? "🗑️" :
@@ -150,6 +152,7 @@ function HourlyPage() {
                           </div>
                         ))}
                       </div>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -209,9 +212,14 @@ function zipLogs(logs: [ScreenshotLog[], ApplicationLog[], BrowserLog[], FileLog
   return zipped;
 }
 
-function timestamp_str(timestamp: number): string {
+function timestamp_mm(timestamp: number): string {
   let date = new Date(timestamp * 1000);
-  return date.toLocaleTimeString().slice(2);
+  return ("0" + date.toLocaleString("en-US", { minute: "numeric" })).slice(-2);
+}
+
+function timestamp_mmss(timestamp: number): string {
+  let date = new Date(timestamp * 1000);
+  return ("0" + date.toLocaleString("en-US", { minute: "2-digit", second: "2-digit" })).slice(-5);
 }
 
 function filename(path: string): string {
