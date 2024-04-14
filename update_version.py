@@ -18,6 +18,7 @@ def update_version(file_path, new_version):
     subprocess.run(["git", "add", file_path], check=True)
     print(f"{file_path} has been updated to {new_version}.")
 
+
 def test_build():
     subprocess.run(["pnpm", "tauri", "build", "-c", "src-tauri/tauri.conf.build.json"], check=True)
     subprocess.run(["git", "add", "pnpm-lock.yaml"], check=True)
