@@ -3,8 +3,13 @@ use anyhow::{anyhow, Context as _, Result};
 use chrono::{DateTime, Utc};
 use futures::TryStreamExt;
 use log::debug;
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::HashSet,
+    path::MAIN_SEPARATOR,
+    sync::{Arc, Mutex},
+};
 use sqlx::{
     Pool,
     sqlite::Sqlite,
@@ -17,6 +22,20 @@ use tauri::{
 use crate::plugins::db;
 
 pub const KIND: &str = "application";
+
+#[cfg(target_os = "windows")]
+static IGNORE_APPS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
+    vec![
+        "LockApp.exe",
+        "scrnsave.scr",
+    ].iter().cloned().collect()
+});
+
+#[cfg(not(target_os = "windows"))]
+static IGNORE_APPS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
+    vec![
+    ].iter().cloned().collect()
+});
 
 pub fn init() -> TauriPlugin<Wry> {
     plugin::Builder::new("application")
@@ -83,6 +102,14 @@ impl ApplicationPlugin {
 
                 if let Some(win_info) = win_info {
                     debug!("check_application: {:?}", win_info);
+
+                    let app_last_path = win_info.path.as_str().split(MAIN_SEPARATOR).last().unwrap();
+                    // debug!("check_application: app_last_path={}", app_last_path);
+                    if IGNORE_APPS.contains(app_last_path) {
+                        debug!("check_application: ignore app: {}", win_info.name);
+                        continue;
+                    }
+
                     let ids = self_clone.insert_win_info(&win_info).await;
                     match ids {
                         Ok((id, info_id)) => {
