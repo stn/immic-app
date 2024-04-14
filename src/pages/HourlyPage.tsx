@@ -18,6 +18,7 @@ import {
   FileLog,
   ScreenshotLog
 } from "@/lib/events";
+import { time } from "console";
 
 function HourlyPage() {
   const params = useParams();
@@ -115,11 +116,23 @@ function HourlyPage() {
                   <div className="w-96 col-start-3">
                     {filelogs.map((filelog) => (
                       <div key={filelog.id}>
-                        {filelog.kind === "create" ? "C" :
-                        filelog.kind === "modify" ? "M" : 
-                        filelog.kind === "remove" ? "R" :
-                        "?"}&nbsp;{filelog.path}
-                        {/* {JSON.stringify(filelog)} */}
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger>
+                              <div className="text-left">
+                                {timestamp_str(filelog.timestamp)}
+                                {filelog.kind === "create" ? "🗒️" :
+                                filelog.kind === "modify" ? "📝" : 
+                                filelog.kind === "remove" ? "🗑️" :
+                                "?"}&nbsp;{filename(filelog.path)}
+                                {/* {JSON.stringify(filelog)} */}
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom">
+                              {filelog.path}
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       </div>
                     ))}
                   </div>
@@ -178,6 +191,15 @@ function zipLogs(logs: [ScreenshotLog[], ApplicationLog[], BrowserLog[], FileLog
   }
 
   return zipped;
+}
+
+function timestamp_str(timestamp: number): string {
+  let date = new Date(timestamp * 1000);
+  return date.toLocaleTimeString().slice(2);
+}
+
+function filename(path: string): string {
+  return path.split(/[/\\]/).pop() || "";
 }
 
 export default HourlyPage;
