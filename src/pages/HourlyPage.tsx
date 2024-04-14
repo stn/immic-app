@@ -23,18 +23,20 @@ function HourlyPage() {
   const params = useParams();
 
   const [timeline, setTimeline] = useState<[string, [ScreenshotLog[], ApplicationLog[], BrowserLog[], FileLog[]]][]>();
+  const [timestamp, setTimestamp] = useState<number>();
   const [screenUrl, setScreenUrl] = useState<string>("");
   const [visibleContent, setVisibleContent] = useState<boolean>(true);
 
   const setTimeframe = useCallback((_timeframe: number, screens: ScreenshotLog[]) => {
     if (screens.length > 0) {
+      setTimestamp(screens[0].timestamp);
       setScreenUrl(image_url(screens[0]));
     }
-  }, [setScreenUrl]);
+  }, []);
 
   const toggleVisibleContent = useCallback(() => {
     setVisibleContent(!visibleContent);
-  }, [visibleContent, setVisibleContent]);
+  }, [visibleContent]);
 
   useEffect(() => {
     let isMounted = true;
@@ -63,15 +65,20 @@ function HourlyPage() {
       style={{ "backgroundImage": `url(${screenUrl})` } as React.CSSProperties}
       className="bg-fixed bg-contain bg-center bg-no-repeat"
     >
-      <div className="sticky top-0 pb-2 bg-transparent/20">
-        <h1 className="text-4xl font-semibold mb-6 bg-black">
+      <div className="sticky top-0">
+        <h1 className="text-4xl font-semibold pb-4 bg-transparent/80">
           <Link to="/">
             {params.year}/{params.month}/{params.day}
           </Link>
+          { timestamp && (
+            <span className="text-4xl ml-4">
+              {timestamp_hhmm(timestamp)}
+            </span>
+          )}
         </h1>
       </div>
       <div
-        className="mt-20"
+        className="m-0 p-0"
         onClick={() => { toggleVisibleContent(); }}
       >
         { !visibleContent && (
@@ -82,24 +89,27 @@ function HourlyPage() {
         { visibleContent && (
           <div className="bg-transparent/60">
             { timeline && timeline.map(([hour, [screens, applications, browsers, filelogs]]) => (
-              <div key={hour} className="my-4">
-                <h2 className="text-4xl font-semibold mb-2">
-                  {hour}:00
+              <div key={hour} className="py-2">
+                <h2 className="text-3xl font-semibold mb-4">
+                  {hour}
                 </h2>
                 { zipLogs([screens, applications, browsers, filelogs]).map(([timeframe, [screens, applications, browsers, filelogs]]) => (
                   <div
-                  key={timeframe}
-                  className="grid grid-cols-3 gap-4 hover:bg-transparent/80"
-                  onMouseEnter={() => setTimeframe(timeframe, screens)}
+                    key={timeframe}
+                    className="flex gap-6 hover:bg-transparent/80"
+                    onMouseEnter={() => setTimeframe(timeframe, screens)}
                   >
-                    <div className="w-96 col-start-1">
+                    <div className="flex-none w-4">
+                      {("0" + (timeframe % 60)).slice(-2)}
+                    </div>
+                    <div className="flex-auto w-96">
                       {applications.map((app) => (
                         <div key={app.id}>
                             <TooltipProvider>
                               <Tooltip>
                                 <TooltipTrigger>
-                                  <div className="text-left">{timestamp_mm(app.timestamp)} {app.name}</div>
-                                  <div className="text-left pl-6">{app.title}</div>
+                                  {/* <div className="text-left">{timestamp_mm(app.timestamp)} {app.name}</div> */}
+                                  <div className="text-left">{app.title}</div>
                                 </TooltipTrigger>
                                 <TooltipContent side="bottom">
                                   {app.path}
@@ -110,7 +120,7 @@ function HourlyPage() {
                         </div>
                       ))}
                     </div>
-                    <div className="w-96 col-start-2">
+                    <div className="flex-auto w-96">
                       <ul className="list-none ml-10">
                         {browsers.map((browser) => (
                           <li key={browser.id}>
@@ -137,7 +147,7 @@ function HourlyPage() {
                         ))}
                       </ul>
                     </div>
-                    <div className="w-96 col-start-3">
+                    <div className="flex-auto w-96">
                       <div className="ml-10">
                         {filelogs.map((filelog) => (
                           <div key={filelog.id}>
@@ -177,10 +187,10 @@ function zipLogs(logs: [ScreenshotLog[], ApplicationLog[], BrowserLog[], FileLog
   const [screens, applications, browsers, filelogs] = logs;
 
   let timeframes = [...new Set([
-    ...screens.map((s) => s.timestamp / 60 | 0),
-    ...applications.map((a) => a.timestamp / 60 | 0 + 1),
-    ...browsers.map((b) => b.timestamp / 60 | 0 + 1),
-    ...filelogs.map((f) => f.timestamp / 60 | 0 + 1),
+    ...screens.map((s) => Math.floor(s.timestamp / 60)),
+    ...applications.map((a) => Math.floor(a.timestamp / 60)),
+    ...browsers.map((b) => Math.floor(b.timestamp / 60)),
+    ...filelogs.map((f) => Math.floor(f.timestamp / 60)),
   ])].sort();
 
   let zipped: [number, [ScreenshotLog[], ApplicationLog[], BrowserLog[], FileLog[]]][] = [];
@@ -192,25 +202,25 @@ function zipLogs(logs: [ScreenshotLog[], ApplicationLog[], BrowserLog[], FileLog
 
   for (let t of timeframes) {
     let scrs = [];
-    while (screenIndex < screens.length && (screens[screenIndex].timestamp / 60 | 0) === t) {
+    while (screenIndex < screens.length && Math.floor(screens[screenIndex].timestamp / 60) === t) {
       scrs.push(screens[screenIndex]);
       screenIndex++;
     }
 
     let apps = [];
-    while (appIndex < applications.length && (applications[appIndex].timestamp / 60 | 0 + 1) === t) {
+    while (appIndex < applications.length && Math.floor(applications[appIndex].timestamp / 60) === t) {
       apps.push(applications[appIndex]);
       appIndex++;
     }
 
     let brs = [];
-    while (browserIndex < browsers.length && (browsers[browserIndex].timestamp / 60 | 0 + 1) === t) {
+    while (browserIndex < browsers.length && Math.floor(browsers[browserIndex].timestamp / 60) === t) {
       brs.push(browsers[browserIndex]);
       browserIndex++;
     }
 
     let fls = [];
-    while (filelogIndex < filelogs.length && (filelogs[filelogIndex].timestamp / 60 | 0 + 1) === t) {
+    while (filelogIndex < filelogs.length && Math.floor(filelogs[filelogIndex].timestamp / 60) === t) {
       fls.push(filelogs[filelogIndex]);
       filelogIndex++;
     }
@@ -221,14 +231,19 @@ function zipLogs(logs: [ScreenshotLog[], ApplicationLog[], BrowserLog[], FileLog
   return zipped;
 }
 
-function timestamp_mm(timestamp: number): string {
-  let date = new Date(timestamp * 1000);
-  return ("0" + date.toLocaleString("en-US", { minute: "numeric" })).slice(-2);
-}
+// function timestamp_mm(timestamp: number): string {
+//   let date = new Date(timestamp * 1000);
+//   return ("0" + date.toLocaleTimeString("ja-JP", { minute: "numeric" })).slice(-2);
+// }
 
 function timestamp_mmss(timestamp: number): string {
   let date = new Date(timestamp * 1000);
-  return ("0" + date.toLocaleString("en-US", { minute: "2-digit", second: "2-digit" })).slice(-5);
+  return ("0" + date.toLocaleTimeString("ja-JP", { minute: "2-digit", second: "2-digit" })).slice(-5);
+}
+
+function timestamp_hhmm(timestamp: number): string {
+  let date = new Date(timestamp * 1000);
+  return ("0" + date.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit"})).slice(-5);
 }
 
 function filename(path: string): string {
