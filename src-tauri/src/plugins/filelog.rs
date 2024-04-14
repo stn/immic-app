@@ -36,6 +36,7 @@ use crate::plugins::{
 
 pub const KIND: &str = "file";
 const WATCH_PATHSEST_SETTING: &str = "watch-pathset";
+const DEBOUNCE_THRESHOLD: i64 = 60;
 
 static IGNORE_EXTS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
     vec![
@@ -134,28 +135,8 @@ impl FilelogPlugin {
 
             for info in infos.iter() {
                 debug!("file event info: {:?}", info);
-                
-                // check debounce
-                match self.check_debounce(&info).await {
-                    Ok(is_debounce) => {
-                        if is_debounce {
-                            debug!("filelog: debounced!");
-                            continue;
-                        }
-                    },
-                    Err(e) => {
-                        error!("Error on check debounce: {:?}", e);
-                        continue;
-                    },
-                }
-
-                match self.insert_info(info).await {
-                    Ok(id) => {
-                        debug!("filelog: inserted id: {:?}", id);
-                    },
-                    Err(e) => {
-                        error!("Error on insert filelog: {:?}", e);
-                    },
+                if let Err(e) = self.maybe_insert_info(info).await {
+                    error!("Error on maybe_insert_info: {:?}", e);
                 }
             }
         }
@@ -230,6 +211,15 @@ impl FilelogPlugin {
     pub fn stop(&self) {
         debug!("filelog stop");
         *self.running.lock().unwrap() = false;
+    }
+
+    async fn maybe_insert_info(&self, info: &FileEventInfo) -> Result<Option<i64>> {
+        if self.check_debounce(info).await? {
+            debug!("filelog: debounced!");
+            return Ok(None);
+        }
+        let id = self.insert_info(info).await?;
+        Ok(Some(id))
     }
 
     async fn insert_info(&self, info: &FileEventInfo) -> Result<i64> {
@@ -319,6 +309,37 @@ impl FilelogPlugin {
         Ok(log_id)
     }
 
+    async fn check_debounce(&self, info: &FileEventInfo) -> Result<bool> {
+        let timestamp = Utc::now().timestamp();
+
+        let db = self.app.state::<db::ImmicDb>();
+        let pool = db.pool().await.context("db pool is not set")?;
+
+        let result = sqlx::query_as::<_, (Option<i64>,)>(
+            r#"
+            SELECT last_update
+            FROM file_info
+            WHERE path = ?
+            "#
+        )
+        .bind(&info.path.to_string_lossy().to_string())
+        .fetch_one(&pool)
+        .await;
+
+        if let Ok((last_update,)) = result {
+            if last_update.is_none() {
+                return Ok(false);
+            }
+
+            let last_update = last_update.unwrap();
+            if timestamp - last_update < DEBOUNCE_THRESHOLD {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
+    }
+
     pub async fn list_file_logs_on(&self, date: String) -> Result<Vec<FileLog>> {
         let db = self.app.state::<db::ImmicDb>();
         let pool = db.pool().await.context("db pool is not set")?;
@@ -326,13 +347,13 @@ impl FilelogPlugin {
         let mut rows = sqlx::query_as::<_, (
             i64, i64,
             i64, Option<String>,
-            i64, String, Option<i64>,
+            i64, String,
         )>(
             r#"
             SELECT
             e.id, e.timestamp,
             f.id, f.kind,
-            i.id, i.path, i.last_update
+            i.id, i.path
             FROM event_log e
             INNER JOIN file_log f ON e.id = f.event_id
             INNER JOIN file_info i ON f.info_id = i.id
@@ -349,7 +370,7 @@ impl FilelogPlugin {
             let (
                 event_id, timestamp,
                 id, kind,
-                info_id, path, last_update,
+                info_id, path,
             ) = row;
             filelogs.push(FileLog {
                 id,
@@ -359,7 +380,6 @@ impl FilelogPlugin {
                 info_id,
                 path,
                 kind,
-                last_update,
             });
         }
         Ok(filelogs)
@@ -395,36 +415,6 @@ impl FilelogPlugin {
             }
         }
     }
-
-    async fn check_debounce(&self, info: &FileEventInfo) -> Result<bool> {
-        let timestamp = Utc::now().timestamp();
-
-        let db = self.app.state::<db::ImmicDb>();
-        let pool = db.pool().await.context("db pool is not set")?;
-
-        let (last_update,) = sqlx::query_as::<_, (Option<i64>,)>(
-            r#"
-            SELECT last_update
-            FROM file_info
-            WHERE path = ?
-            "#
-        )
-        .bind(&info.path.to_string_lossy().to_string())
-        .fetch_one(&pool)
-        .await?;
-
-        if last_update.is_none() {
-            return Ok(false);
-        }
-
-        let last_update = last_update.unwrap();
-        if timestamp - last_update < 60 {
-            return Ok(true);
-        }
-
-        Ok(false)
-    }
-
 }
 
 #[derive(Debug,PartialEq)]
@@ -519,7 +509,6 @@ pub struct FileLog {
     pub info_id: i64,
     pub path: String,
     pub kind: Option<String>,
-    pub last_update: Option<i64>,
 }
 
 impl db::Timestamp for FileLog {

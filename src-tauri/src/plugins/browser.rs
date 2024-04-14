@@ -28,6 +28,7 @@ use super::db;
 pub const KIND: &str = "browser";
 const SERVER_PORT_SETTING: &str = "server-port";
 const DEFAULT_SERVER_PORT: u16 = 3294;
+const DEBOUNCE_THRESHOLD: i64 = 60;
 
 pub fn init() -> TauriPlugin<Wry> {
     plugin::Builder::new("browser")
@@ -56,6 +57,15 @@ impl BrowserPlugin {
         }
     }
 
+    async fn maybe_insert_info(&self, info: &TabInfo) -> Result<Option<i64>> {
+        if self.check_debounce(info).await? {
+            debug!("browsers: debounced!");
+            return Ok(None);
+        }
+        let id = self.insert_info(info).await?;
+        Ok(Some(id))
+    }
+
     async fn insert_info(&self, info: &TabInfo) -> Result<i64> {
         assert!(info.url.is_some(), "url is required");
 
@@ -64,68 +74,50 @@ impl BrowserPlugin {
         let db = self.app.state::<ImmicDb>();
         let event_id = db.insert_eventlog(timestamp, KIND).await?;
 
-        // Search browser_info by url
         let pool = db.pool().await.expect("db pool is not set");
-        let result = sqlx::query_as::<_, (i64,)>(
+
+        // Upsert browser_info by url
+        let result = sqlx::query(
             r#"
-            SELECT id
-            FROM browser_info
-            WHERE url = ?
+            INSERT OR REPLACE INTO browser_info (id, url, fav_icon_url, last_update)
+            VALUES (
+                (SELECT id FROM browser_info WHERE url = ?),
+                ?,
+                ?,
+                ?
+            );
             "#
         )
         .bind(&info.url)
-        .fetch_one(&pool)
-        .await;
-        let info_id = match result {
-            Ok((id,)) => id,
-            Err(_) => {
-                let result = sqlx::query(
-                    r#"
-                    INSERT INTO browser_info (url, fav_icon_url)
-                    VALUES (?, ?)
-                    "#
-                )
-                .bind(&info.url)
-                .bind(&info.favIconUrl)
-                .execute(&pool)
-                .await?;
-                result.last_insert_rowid()
-            }
-        };
+        .bind(&info.url)
+        .bind(&info.favIconUrl)
+        .bind(timestamp.timestamp())
+        .execute(&pool)
+        .await?;
 
+        let info_id = result.last_insert_rowid();
+        
         // Search browser_info by referrer
         let referrer_id = match &info.referrer {
             Some(referrer) => {
                 if referrer.is_empty() {
                     None
                 } else {
-                    let result = sqlx::query_as::<_, (i64,)>(
+                    let result = sqlx::query(
                         r#"
-                        SELECT id
-                        FROM browser_info
-                        WHERE url = ?
+                        INSERT OR REPLACE INTO browser_info (id, url)
+                        VALUES (
+                            (SELECT id FROM browser_info WHERE url = ?),
+                            ?
+                        );
                         "#
                     )
                     .bind(referrer)
-                    .fetch_one(&pool)
-                    .await;
+                    .bind(referrer)
+                    .execute(&pool)
+                    .await?;
 
-                    let referrer_id = match result {
-                        Ok((id,)) => id,
-                        Err(_) => {
-                            let result = sqlx::query(
-                                r#"
-                                INSERT INTO browser_info (url)
-                                VALUES (?)
-                                "#
-                            )
-                            .bind(referrer)
-                            .execute(&pool)
-                            .await?;
-                            result.last_insert_rowid()
-                        }
-                    };
-
+                    let referrer_id = result.last_insert_rowid();
                     Some(referrer_id)
                 }
             },
@@ -148,10 +140,7 @@ impl BrowserPlugin {
         .execute(&pool)
         .await?;
 
-        // Update event_log with log_id
         let log_id = result.last_insert_rowid();
-        // db.update_eventlog_logid(event_id , log_id).await?;
-
         Ok(log_id)
     }
 
@@ -161,35 +150,26 @@ impl BrowserPlugin {
         let db = self.app.state::<ImmicDb>();
         let event_id = db.insert_eventlog_with(pool, timestamp, KIND).await?;
 
-        // Search browser_info by url
-        let result = sqlx::query_as::<_, (i64,)>(
+        // Upsert browser_info by url
+        let result = sqlx::query(
             r#"
-            SELECT id
-            FROM browser_info
-            WHERE url = ?
+            INSERT OR REPLACE INTO browser_info (id, url, fav_icon_url, last_update)
+            VALUES (
+                (SELECT id FROM browser_info WHERE url = ?),
+                ?,
+                ?,
+                ?
+            );
             "#
         )
         .bind(&log.url)
-        .fetch_one(pool)
-        .await;
+        .bind(&log.url)
+        .bind(&log.fav_icon_url)
+        .bind(timestamp.timestamp())
+        .execute(pool)
+        .await?;
 
-        let info_id = match result {
-            Ok((id,)) => id,
-            Err(_) => {
-                let result = sqlx::query(
-                    r#"
-                    INSERT INTO browser_info (url, fav_icon_url)
-                    VALUES (?, ?)
-                    "#
-                )
-                .bind(&log.url)
-                .bind(&log.fav_icon_url)
-                .execute(pool)
-                .await?;
-
-                result.last_insert_rowid()
-            }
-        };
+        let info_id = result.last_insert_rowid();
 
         // Search browser_info by referrer
         let referrer_id = match &log.referrer {
@@ -197,34 +177,21 @@ impl BrowserPlugin {
                 if referrer.is_empty() {
                     None
                 } else {
-                    let result = sqlx::query_as::<_, (i64,)>(
+                    let result = sqlx::query(
                         r#"
-                        SELECT id
-                        FROM browser_info
-                        WHERE url = ?
+                        INSERT OR REPLACE INTO browser_info (id, url)
+                        VALUES (
+                            (SELECT id FROM browser_info WHERE url = ?),
+                            ?
+                        );
                         "#
                     )
                     .bind(referrer)
-                    .fetch_one(pool)
-                    .await;
+                    .bind(referrer)
+                    .execute(pool)
+                    .await?;
 
-                    let referrer_id = match result {
-                        Ok((id,)) => id,
-                        Err(_) => {
-                            let result = sqlx::query(
-                                r#"
-                                INSERT INTO browser_info (url)
-                                VALUES (?)
-                                "#
-                            )
-                            .bind(referrer)
-                            .execute(pool)
-                            .await?;
-
-                            result.last_insert_rowid()
-                        }
-                    };
-
+                    let referrer_id = result.last_insert_rowid();
                     Some(referrer_id)
                 }
             },
@@ -252,6 +219,38 @@ impl BrowserPlugin {
         // db.update_eventlog_logid_with(pool, event_id , log_id).await?;
 
         Ok(log_id)
+    }
+
+    async fn check_debounce(&self, info: &TabInfo) -> Result<bool> {
+        let timestamp = DateTime::from_timestamp_millis(info.timestampMs).expect("Invalid timestamp");
+        let timestamp = timestamp.timestamp();
+
+        let db = self.app.state::<db::ImmicDb>();
+        let pool = db.pool().await.context("db pool is not set")?;
+
+        let result = sqlx::query_as::<_, (Option<i64>,)>(
+            r#"
+            SELECT last_update
+            FROM browser_info
+            WHERE url = ?
+            "#
+        )
+        .bind(&info.url)
+        .fetch_one(&pool)
+        .await;
+
+        if let Ok((last_update,)) = result {
+            if last_update.is_none() {
+                return Ok(false);
+            }
+
+            let last_update = last_update.unwrap();
+            if timestamp - last_update < DEBOUNCE_THRESHOLD {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
     }
 
     pub async fn list_browser_logs_on(&self, date: String) -> Result<Vec<BrowserLog>> {
@@ -314,9 +313,9 @@ impl BrowserPlugin {
         let db = self.app.state::<ImmicDb>();
         let pool = db.pool().await.expect("db pool is not set");
 
-        let result = sqlx::query_as::<_, (i64, String, Option<String>)>(
+        let result = sqlx::query_as::<_, (i64, String, Option<String>, Option<i64>)>(
             r#"
-            SELECT id, url, fav_icon_url
+            SELECT id, url, fav_icon_url, last_update
             FROM browser_info
             WHERE id = ?
             "#
@@ -326,11 +325,12 @@ impl BrowserPlugin {
         .await;
 
         match result {
-            Ok((id, url, fav_icon_url)) => {
+            Ok((id, url, fav_icon_url, last_update)) => {
                 Ok(BrowserInfo {
                     id,
                     url,
                     fav_icon_url,
+                    last_update,
                 })
             },
             Err(e) => Err(anyhow!("Not found: {}", e)),
@@ -357,7 +357,7 @@ pub async fn browserlog(tab_info: web::Json<TabInfo>, data: web::Data<AppHandle>
 
     let browser_plugin = data.get_ref().state::<BrowserPlugin>();
 
-    if let Err(e) = browser_plugin.insert_info(&tab_info).await {
+    if let Err(e) = browser_plugin.maybe_insert_info(&tab_info).await {
         error!("Error on insert: {:?}", e);
         return Err(actix_web::error::ErrorInternalServerError(e));
     }
@@ -392,6 +392,7 @@ pub struct BrowserInfo {
     pub id: i64,
     pub url: String,
     pub fav_icon_url: Option<String>,
+    pub last_update: Option<i64>,
 }
 
 #[tauri::command]
