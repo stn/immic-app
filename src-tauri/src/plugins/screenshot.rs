@@ -129,7 +129,7 @@ impl ScreenshotPlugin {
 
     async fn insert_screenshot(&self, screenshot: &Screenshot) -> Result<i64> {
         let db = self.app.state::<db::ImmicDb>();
-        let event_id = db.insert_eventlog(screenshot.timestamp, KIND).await?;
+        let event_id = db.insert_eventlog(&screenshot.timestamp, KIND).await?;
 
         let pool = db.pool().await.expect("db pool is not set");
         let result = sqlx::query(
@@ -151,7 +151,7 @@ impl ScreenshotPlugin {
 
     async fn save_screenshot(&self, screenshot: &Screenshot) -> Result<()> {
         let image_dir = self.image_dir.lock().unwrap().clone().unwrap();
-        let path = image_path(&image_dir, screenshot.timestamp, screenshot.monitor);
+        let path = image_path(&image_dir, &screenshot.timestamp, screenshot.monitor);
         screenshot.image.save(path).expect("failed to save screenshot");
 
         Ok(())
@@ -161,7 +161,7 @@ impl ScreenshotPlugin {
         let timestamp = DateTime::from_timestamp(log.timestamp, 0).context("Invalid timestamp")?;
 
         let db = self.app.state::<db::ImmicDb>();
-        let event_id = db.insert_eventlog_with(pool, timestamp, KIND).await?;
+        let event_id = db.insert_eventlog_with(pool, &timestamp, KIND).await?;
 
         let result = sqlx::query(
             r#"
@@ -174,9 +174,7 @@ impl ScreenshotPlugin {
         .execute(pool)
         .await?;
 
-        // Update event_log with log_id
         let log_id = result.last_insert_rowid();
-        // db.update_eventlog_logid_with(pool, event_id, log_id).await?;
         Ok(log_id)
     }
 
@@ -185,12 +183,12 @@ impl ScreenshotPlugin {
         let pool = db.pool().await.context("db pool is not set")?;
 
         let mut rows = sqlx::query_as::<_, (
-            i64, i64, String, String,
+            i64, String,
             i64, i64
         )>(
             r#"
             SELECT
-            e.id, e.timestamp, e.date, e.kind,
+            e.timestamp, e.date,
             s.id, s.monitor_id
             FROM event_log e
             INNER JOIN screenshot s ON e.id = s.event_id
@@ -205,12 +203,11 @@ impl ScreenshotPlugin {
         let mut screenshot_logs = Vec::new();
         while let Some(row) = rows.try_next().await? {
             let (
-                event_id, timestamp, date, _kind,
+                timestamp, date,
                 id, monitor_id,
             ) = row;
             screenshot_logs.push(ScreenshotLog {
                 id,
-                event_id,
                 timestamp,
                 date,
                 monitor_id,
@@ -270,15 +267,15 @@ fn image_base_dir(app: &AppHandle) -> Result<PathBuf> {
     Ok(image_dir)
 }
 
-fn image_dir_name(timestamp: DateTime<Utc>) -> String {
+fn image_dir_name(timestamp: &DateTime<Utc>) -> String {
     timestamp.format("%Y%m%d").to_string()
 }
 
-fn image_basename(timestamp: DateTime<Utc>, monitor_id: i64) -> String {
+fn image_basename(timestamp: &DateTime<Utc>, monitor_id: i64) -> String {
     format!("{}-{}", timestamp.format("%H%M%S"), monitor_id)
 }
 
-fn image_path(dir: &PathBuf, timestamp: DateTime<Utc>, monitor_id: i64) -> PathBuf {
+fn image_path(dir: &PathBuf, timestamp: &DateTime<Utc>, monitor_id: i64) -> PathBuf {
     let date_dir = dir.join(image_dir_name(timestamp));
     if !date_dir.exists() {
         std::fs::create_dir(&date_dir).unwrap();
@@ -314,7 +311,6 @@ struct Screenshot {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ScreenshotLog {
     pub id: i64,
-    pub event_id: i64,
     pub timestamp: i64,
     pub date: String,
     pub monitor_id: i64,

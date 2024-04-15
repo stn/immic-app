@@ -153,12 +153,12 @@ impl ImmicDb {
         Ok(())
     }
 
-    pub async fn insert_eventlog(&self, datetime: DateTime<Utc>, kind: &str) -> Result<i64> {
+    pub async fn insert_eventlog(&self, datetime: &DateTime<Utc>, kind: &str) -> Result<i64> {
         let pool = self.pool().await?;
         self.insert_eventlog_with(&pool, datetime, kind).await
     }
 
-    pub async fn insert_eventlog_with(&self, pool: &Pool<Sqlite>, datetime: DateTime<Utc>, kind: &str) -> Result<i64> {
+    pub async fn insert_eventlog_with(&self, pool: &Pool<Sqlite>, datetime: &DateTime<Utc>, kind: &str) -> Result<i64> {
         // timestamp to date string in local timezone
         let ts = datetime.timestamp();
         let local_time = datetime.with_timezone(&chrono::Local);
@@ -386,6 +386,7 @@ pub fn partition_logs<T: Timestamp>(logs: Vec<T>, local_time: &DateTime<Local>, 
 
 // Export and Import
 
+// trait objectを使った方が拡張性はあるのだけど
 #[derive(Debug, Deserialize, Serialize)]
 pub enum AnyLog {
     ApplicationLogEntry(ApplicationLog),

@@ -2376,6 +2376,7 @@ dependencies = [
  "tauri-plugin-autostart",
  "tauri-plugin-store",
  "tokio",
+ "url",
  "xcap",
 ]
 
