@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS browser_origin (
 ,   fav_icon_url TEXT
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS browser_origin_origin ON browser2_origin (origin);
+CREATE UNIQUE INDEX IF NOT EXISTS browser_origin_origin ON browser_origin (origin);
 
 CREATE TABLE IF NOT EXISTS browser_url (
     id INTEGER PRIMARY KEY
@@ -16,8 +16,8 @@ CREATE TABLE IF NOT EXISTS browser_url (
 ,   FOREIGN KEY(origin_id) REFERENCES browser_origin
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS browser_url_url ON browser2_url (url);
-CREATE INDEX IF NOT EXISTS browser_url_origin_id ON browser2_url (origin_id);
+CREATE UNIQUE INDEX IF NOT EXISTS browser_url_url ON browser_url (url);
+CREATE INDEX IF NOT EXISTS browser_url_origin_id ON browser_url (origin_id);
 
 CREATE TABLE IF NOT EXISTS browser_log (
     id INTEGER PRIMARY KEY
@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS browser_log (
 ,   FOREIGN KEY(referrer_id) REFERENCES browser_url
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS browser_log_event_id ON browser2_log (event_id);
-CREATE INDEX IF NOT EXISTS browser_log_origin_id ON browser2_log (origin_id);
-CREATE INDEX IF NOT EXISTS browser_log_url_id ON browser2_log (url_id);
-CREATE INDEX IF NOT EXISTS browser_log_referrer_id ON browser2_log (referrer_id);
+CREATE UNIQUE INDEX IF NOT EXISTS browser_log_event_id ON browser_log (event_id);
+CREATE INDEX IF NOT EXISTS browser_log_origin_id ON browser_log (origin_id);
+CREATE INDEX IF NOT EXISTS browser_log_url_id ON browser_log (url_id);
+CREATE INDEX IF NOT EXISTS browser_log_referrer_id ON browser_log (referrer_id);

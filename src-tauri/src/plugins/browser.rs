@@ -10,8 +10,8 @@ use futures::TryStreamExt;
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
 use sqlx::{
-    Pool,
     sqlite::Sqlite,
+    Pool,
 };
 use tauri::{
     plugin::{self, TauriPlugin},
@@ -140,7 +140,7 @@ impl BrowserPlugin {
                 result.last_insert_rowid()
             }
         };
-        debug!("origin_id: {:?}", origin_id);
+        // debug!("origin_id: {:?}", origin_id);
 
         // browser_url
         let result = sqlx::query_as::<_, (i64,)>(
@@ -181,7 +181,7 @@ impl BrowserPlugin {
                 result.last_insert_rowid()
             }
         };
-        debug!("url_id: {:?}", url_id);
+        // debug!("url_id: {:?}", url_id);
 
         let referrer_id = match &log.referrer {
             Some(referrer) => {
@@ -357,7 +357,13 @@ impl BrowserPlugin {
                 referrer,
             ) = row;
             let url = match url_query {
-                Some(url_query) => format!("{}?{}", url, url_query),
+                Some(url_query) => {
+                    if url_query.is_empty() {
+                        url
+                    } else {
+                        format!("{}?{}", url, url_query)
+                    }
+                },
                 None => url,
             };
             browserlogs.push(BrowserLog {
@@ -462,12 +468,16 @@ impl db::Timestamp for BrowserLog {
 //     pub last_update: Option<i64>,
 // }
 
-fn parse_url(url: &str) -> Result<(String, String, String)> {
+fn parse_url(url: &str) -> Result<(String, String, Option<String>)> {
     let parsed = Url::parse(url)?;
+    let query = match &parsed[url::Position::BeforeQuery..] {
+        s if s.is_empty() => None,
+        s => Some(s.to_string()),
+    };
     Ok((
         parsed[..url::Position::AfterPort].to_string(),
         parsed[..url::Position::AfterPath].to_string(),
-        parsed[url::Position::BeforeQuery..].to_string()
+        query,
     ))
 }
 
