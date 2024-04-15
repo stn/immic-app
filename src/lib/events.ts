@@ -7,10 +7,8 @@ export type EventLog = {
 
 export type ApplicationLog = {
     id: number
-    event_id: number
     timestamp: number
     date: string
-    info_id: number
     path: string
     name?: string
     process_id?: number
@@ -45,7 +43,6 @@ export type FileLog = {
 
 export type ScreenshotLog = {
     id: number
-    event_id: number
     timestamp: number
     date: string
     monitor_id: number

@@ -174,9 +174,7 @@ impl ScreenshotPlugin {
         .execute(pool)
         .await?;
 
-        // Update event_log with log_id
         let log_id = result.last_insert_rowid();
-        // db.update_eventlog_logid_with(pool, event_id, log_id).await?;
         Ok(log_id)
     }
 
@@ -185,12 +183,12 @@ impl ScreenshotPlugin {
         let pool = db.pool().await.context("db pool is not set")?;
 
         let mut rows = sqlx::query_as::<_, (
-            i64, i64, String, String,
+            i64, String,
             i64, i64
         )>(
             r#"
             SELECT
-            e.id, e.timestamp, e.date, e.kind,
+            e.timestamp, e.date,
             s.id, s.monitor_id
             FROM event_log e
             INNER JOIN screenshot s ON e.id = s.event_id
@@ -205,12 +203,11 @@ impl ScreenshotPlugin {
         let mut screenshot_logs = Vec::new();
         while let Some(row) = rows.try_next().await? {
             let (
-                event_id, timestamp, date, _kind,
+                timestamp, date,
                 id, monitor_id,
             ) = row;
             screenshot_logs.push(ScreenshotLog {
                 id,
-                event_id,
                 timestamp,
                 date,
                 monitor_id,
@@ -314,7 +311,6 @@ struct Screenshot {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ScreenshotLog {
     pub id: i64,
-    pub event_id: i64,
     pub timestamp: i64,
     pub date: String,
     pub monitor_id: i64,
