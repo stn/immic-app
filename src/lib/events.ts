@@ -39,6 +39,7 @@ export type FileLog = {
     date: string
     path: string
     kind?: string
+    watch_dir?: string
 }
 
 export type ScreenshotLog = {

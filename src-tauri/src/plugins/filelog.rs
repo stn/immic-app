@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::HashSet,
     fmt,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -110,20 +110,22 @@ impl FilelogPlugin {
 
         let self_clone = self.clone();
         tokio::spawn(async move {
-            self_clone.async_watch(&watch_pathset).await.unwrap();
+            for path in watch_pathset.iter() {
+                if !path.exists() {
+                    error!("watch path not found: {:?}", path);
+                    continue;
+                }
+                self_clone.async_watch(path).await.unwrap();
+            }
         });
 
         Ok(())
     }
 
-    async fn async_watch(&self, pathset: &Vec<PathBuf>) -> Result<()> {
+    async fn async_watch(&self, path: &Path) -> Result<()> {
         let (mut debouncer, mut rx) = self.async_watcher()?;
 
-        // Add each path to be watched. All files and directories at that path and
-        // below will be monitored for changes.
-        for path in pathset.iter() {
-            debouncer.watcher().watch(path, RecursiveMode::Recursive)?;
-        }
+        debouncer.watcher().watch(path, RecursiveMode::Recursive)?;
 
         while let Some(infos) = rx.recv().await {
             // Check if the watcher has been stopped
@@ -133,9 +135,10 @@ impl FilelogPlugin {
                 break;
             }
 
-            for info in infos.iter() {
+            for mut info in infos {
                 debug!("file event info: {:?}", info);
-                if let Err(e) = self.maybe_insert_info(info).await {
+                info.watch_dir = Some(path.to_path_buf());
+                if let Err(e) = self.maybe_insert_info(&info).await {
                     error!("Error on maybe_insert_info: {:?}", e);
                 }
             }
@@ -234,6 +237,7 @@ impl FilelogPlugin {
             date: "".to_string(),  // dummy
             path: info.path.to_string_lossy().to_string(),
             kind: Some(info.kind.to_string()),
+            watch_dir: info.watch_dir.as_ref().map(|p| p.to_string_lossy().to_string()),
         };
 
         self.insert_file_log_with(&pool, &file_log).await
@@ -287,16 +291,50 @@ impl FilelogPlugin {
             }
         };
 
+        // watch_dir
+        let watch_dir_id = match &log.watch_dir {
+            Some(p) => {
+                let result = sqlx::query_as::<_, (i64,)>(
+                    r#"
+                    SELECT id
+                    FROM watch_dir
+                    WHERE dir = ?
+                    "#
+                )
+                .bind(p)
+                .fetch_one(pool)
+                .await;
+
+                match result {
+                    Ok((id,)) => Some(id),
+                    Err(_) => {
+                        let result = sqlx::query(
+                            r#"
+                            INSERT INTO watch_dir (dir)
+                            VALUES (?)
+                            "#
+                        )
+                        .bind(p)
+                        .execute(pool)
+                        .await?;
+                        Some(result.last_insert_rowid())
+                    }
+                }
+            },
+            None => None,
+        };
+
         // Insert file_log
         let result = sqlx::query(
             r#"
-            INSERT INTO file_log (event_id, info_id, kind)
-            VALUES (?, ?, ?)
+            INSERT INTO file_log (event_id, info_id, kind, watch_dir_id)
+            VALUES (?, ?, ?, ?)
             "#
         )
         .bind(event_id)
         .bind(info_id)
         .bind(&log.kind)
+        .bind(watch_dir_id)
         .execute(pool)
         .await?;
 
@@ -343,15 +381,18 @@ impl FilelogPlugin {
             i64,
             i64, Option<String>,
             String,
+            Option<String>,
         )>(
             r#"
             SELECT
             e.timestamp,
             f.id, f.kind,
-            i.path
+            i.path,
+            w.dir
             FROM event_log e
             INNER JOIN file_log f ON e.id = f.event_id
             INNER JOIN file_info i ON f.info_id = i.id
+            LEFT JOIN watch_dir w ON f.watch_dir_id = w.id
             WHERE e.kind = ? AND e.date = ?
             ORDER BY e.id
             "#
@@ -366,6 +407,7 @@ impl FilelogPlugin {
                 timestamp,
                 id, kind,
                 path,
+                watch_dir,
             ) = row;
             filelogs.push(FileLog {
                 id,
@@ -373,6 +415,7 @@ impl FilelogPlugin {
                 date: date.clone(),
                 path,
                 kind,
+                watch_dir,
             });
         }
         Ok(filelogs)
@@ -414,6 +457,7 @@ impl FilelogPlugin {
 struct FileEventInfo {
     kind: FileKind,
     path: PathBuf,
+    watch_dir: Option<PathBuf>,
 }
 
 #[derive(Debug,PartialEq)]
@@ -450,6 +494,7 @@ impl From<&Event> for FileEventInfo {
         Self {
             kind,
             path,
+            watch_dir: None,
         }
     }
 }
@@ -500,6 +545,7 @@ pub struct FileLog {
     pub date: String,
     pub path: String,
     pub kind: Option<String>,
+    pub watch_dir: Option<String>,
 }
 
 impl db::Timestamp for FileLog {
