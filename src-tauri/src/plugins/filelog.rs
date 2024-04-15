@@ -68,7 +68,7 @@ pub fn init() -> TauriPlugin<Wry> {
     plugin::Builder::new("filelog")
         .invoke_handler(tauri::generate_handler![
             list_file_logs_on,
-            get_file_info,
+            // get_file_info,
         ])
         .setup(|app_handle| {
             debug!("filelog plugin setup");
@@ -226,71 +226,66 @@ impl FilelogPlugin {
         let timestamp = Utc::now();
 
         let db = self.app.state::<db::ImmicDb>();
-        let event_id = db.insert_eventlog(timestamp, KIND).await?;
         let pool = db.pool().await.expect("db pool is not set");
 
-        let path = info.path.to_string_lossy().to_string();
+        let file_log = FileLog {
+            id: 0,  // dummy
+            timestamp: timestamp.timestamp(),
+            date: "".to_string(),  // dummy
+            path: info.path.to_string_lossy().to_string(),
+            kind: Some(info.kind.to_string()),
+        };
 
-        // Upsert file_info by path
-        let result = sqlx::query(
-            r#"
-            INSERT OR REPLACE INTO file_info (id, path, last_update)
-            VALUES (
-                (SELECT id FROM file_info WHERE path = ?),
-                ?,
-                ?
-            );
-            "#
-        )
-        .bind(&path)
-        .bind(&path)
-        .bind(timestamp.timestamp())
-        .execute(&pool)
-        .await?;
-
-        let info_id = result.last_insert_rowid();
-
-        // Insert file_log
-        let result = sqlx::query(
-            r#"
-            INSERT INTO file_log (event_id, info_id, kind)
-            VALUES (?, ?, ?)
-            "#
-        )
-        .bind(event_id)
-        .bind(info_id)
-        .bind(&info.kind.to_string())
-        .execute(&pool)
-        .await?;
-
-        let log_id = result.last_insert_rowid();
-        Ok(log_id)
+        self.insert_file_log_with(&pool, &file_log).await
     }
 
     pub async fn insert_file_log_with(&self, pool: &Pool<Sqlite>, log: &FileLog) -> Result<i64> {
         let timestamp = DateTime::from_timestamp(log.timestamp, 0).context("Invalid timestamp")?;
 
         let db = self.app.state::<db::ImmicDb>();
-        let event_id = db.insert_eventlog_with(pool, timestamp, KIND).await?;
+        let event_id = db.insert_eventlog_with(pool, &timestamp, KIND).await?;
 
-        // Upsert file_info by path
-        let result = sqlx::query(
+        // file_info by path
+        let result = sqlx::query_as::<_, (i64,)>(
             r#"
-            INSERT OR REPLACE INTO file_info (id, path, last_update)
-            VALUES (
-                (SELECT id FROM file_info WHERE path = ?),
-                ?,
-                ?
-            );
+            SELECT id
+            FROM file_info
+            WHERE path = ?
             "#
         )
         .bind(&log.path)
-        .bind(&log.path)
-        .bind(timestamp.timestamp())
-        .execute(pool)
-        .await?;
-
-        let info_id = result.last_insert_rowid();
+        .fetch_one(pool)
+        .await;
+        
+        let info_id = match result {
+            Ok((id,)) => {
+                sqlx::query(
+                    r#"
+                    UPDATE file_info
+                    SET last_update = ?
+                    WHERE id = ?
+                    "#
+                )
+                .bind(timestamp.timestamp())
+                .bind(id)
+                .execute(pool)
+                .await?;
+                id
+            },
+            Err(_) => {
+                let result = sqlx::query(
+                    r#"
+                    INSERT INTO file_info (path, last_update)
+                    VALUES (?, ?)
+                    "#
+                )
+                .bind(&log.path)
+                .bind(timestamp.timestamp())
+                .execute(pool)
+                .await?;
+                result.last_insert_rowid()
+            }
+        };
 
         // Insert file_log
         let result = sqlx::query(
@@ -345,15 +340,15 @@ impl FilelogPlugin {
         let pool = db.pool().await.context("db pool is not set")?;
 
         let mut rows = sqlx::query_as::<_, (
-            i64, i64,
+            i64,
             i64, Option<String>,
-            i64, String,
+            String,
         )>(
             r#"
             SELECT
-            e.id, e.timestamp,
+            e.timestamp,
             f.id, f.kind,
-            i.id, i.path
+            i.path
             FROM event_log e
             INNER JOIN file_log f ON e.id = f.event_id
             INNER JOIN file_info i ON f.info_id = i.id
@@ -368,16 +363,14 @@ impl FilelogPlugin {
         let mut filelogs = Vec::new();
         while let Some(row) = rows.try_next().await? {
             let (
-                event_id, timestamp,
+                timestamp,
                 id, kind,
-                info_id, path,
+                path,
             ) = row;
             filelogs.push(FileLog {
                 id,
-                event_id,
                 timestamp,
                 date: date.clone(),
-                info_id,
                 path,
                 kind,
             });
@@ -385,36 +378,36 @@ impl FilelogPlugin {
         Ok(filelogs)
     }
 
-    pub async fn get_file_info(&self, file_id: i64) -> Result<FileInfo> {
-        debug!("get_file_info: file_id={}", file_id);
+    // pub async fn get_file_info(&self, file_id: i64) -> Result<FileInfo> {
+    //     debug!("get_file_info: file_id={}", file_id);
 
-        let db = self.app.state::<db::ImmicDb>();
-        let pool = db.pool().await.expect("db pool is not set");
+    //     let db = self.app.state::<db::ImmicDb>();
+    //     let pool = db.pool().await.expect("db pool is not set");
 
-        let result = sqlx::query_as::<_, (i64, String, Option<i64>)>(
-            r#"
-            SELECT id, path, last_update
-            FROM file_info
-            WHERE id = ?
-            "#
-        )
-        .bind(file_id)
-        .fetch_one(&pool)
-        .await;
+    //     let result = sqlx::query_as::<_, (i64, String, Option<i64>)>(
+    //         r#"
+    //         SELECT id, path, last_update
+    //         FROM file_info
+    //         WHERE id = ?
+    //         "#
+    //     )
+    //     .bind(file_id)
+    //     .fetch_one(&pool)
+    //     .await;
 
-        match result {
-            Ok((id, path, last_update)) => {
-                Ok(FileInfo {
-                    id,
-                    path,
-                    last_update,
-                })
-            },
-            Err(_) => {
-                Err(anyhow::anyhow!("Not found"))
-            }
-        }
-    }
+    //     match result {
+    //         Ok((id, path, last_update)) => {
+    //             Ok(FileInfo {
+    //                 id,
+    //                 path,
+    //                 last_update,
+    //             })
+    //         },
+    //         Err(_) => {
+    //             Err(anyhow::anyhow!("Not found"))
+    //         }
+    //     }
+    // }
 }
 
 #[derive(Debug,PartialEq)]
@@ -503,10 +496,8 @@ fn check_ignore(info: &FileEventInfo) -> bool {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FileLog {
     pub id: i64,
-    pub event_id: i64,
     pub timestamp: i64,
     pub date: String,
-    pub info_id: i64,
     pub path: String,
     pub kind: Option<String>,
 }
@@ -517,19 +508,19 @@ impl db::Timestamp for FileLog {
     }
 }
 
-#[derive(Debug, Serialize)]
-pub struct FileInfo {
-    pub id: i64,
-    pub path: String,
-    pub last_update: Option<i64>,
-}
+// #[derive(Debug, Serialize)]
+// pub struct FileInfo {
+//     pub id: i64,
+//     pub path: String,
+//     pub last_update: Option<i64>,
+// }
 
 #[tauri::command]
 pub async fn list_file_logs_on(file_log: State<'_, FilelogPlugin>, date: String) -> Result<Vec<FileLog>, String> {
     file_log.list_file_logs_on(date).await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-pub async fn get_file_info(file_log: State<'_, FilelogPlugin>, file_id: i64) -> Result<FileInfo, String> {
-    file_log.get_file_info(file_id).await.map_err(|e| e.to_string())
-}
+// #[tauri::command]
+// pub async fn get_file_info(file_log: State<'_, FilelogPlugin>, file_id: i64) -> Result<FileInfo, String> {
+//     file_log.get_file_info(file_id).await.map_err(|e| e.to_string())
+// }

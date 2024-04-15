@@ -43,10 +43,8 @@ export type BrowserLog = {
 
 export type FileLog = {
     id: number
-    event_id: number
     timestamp: number
     date: string
-    info_id: number
     path: string
     kind?: string
 }
