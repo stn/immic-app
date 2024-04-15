@@ -137,7 +137,7 @@ impl ApplicationPlugin {
 
         // Insert event_log
         let db = self.app.state::<db::ImmicDb>();
-        let event_id = db.insert_eventlog(timestamp, KIND).await?;
+        let event_id = db.insert_eventlog(&timestamp, KIND).await?;
 
         // Search application_info by path
         let pool = db.pool().await.unwrap();
@@ -199,7 +199,7 @@ impl ApplicationPlugin {
 
         // Insert event_log
         let db = self.app.state::<db::ImmicDb>();
-        let event_id = db.insert_eventlog(timestamp, KIND).await?;
+        let event_id = db.insert_eventlog(&timestamp, KIND).await?;
 
         let pool = db.pool().await.unwrap();
         let result = sqlx::query(
@@ -228,7 +228,7 @@ impl ApplicationPlugin {
 
         // Insert event_log
         let db = self.app.state::<db::ImmicDb>();
-        let event_id = db.insert_eventlog_with(pool, timestamp, KIND).await?;
+        let event_id = db.insert_eventlog_with(pool, &timestamp, KIND).await?;
 
         // Search application_info by path
         let result = sqlx::query_as::<_, (i64,)>(
@@ -294,7 +294,7 @@ impl ApplicationPlugin {
 
         // Insert event_log
         let db = self.app.state::<db::ImmicDb>();
-        let event_id = db.insert_eventlog_with(pool, timestamp, KIND).await?;
+        let event_id = db.insert_eventlog_with(pool, &timestamp, KIND).await?;
 
         let result = sqlx::query(
             r#"

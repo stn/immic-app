@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS application_log (
 ,   width INTEGER
 ,   height INTEGER
 ,   ref_id INTEGER
-,   FOREIGN KEY(event_id) REFERENCES event_log ON DELETE CASCADE
+,   FOREIGN KEY(event_id) REFERENCES event_log
 ,   FOREIGN KEY(info_id) REFERENCES application_info
 ,   FOREIGN KEY(ref_id) REFERENCES application_log
 );

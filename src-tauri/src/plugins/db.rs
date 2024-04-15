@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Local, Timelike, Utc};
 use futures::TryStreamExt;
-use log::debug;
+use log::{error, debug};
 use serde::{Deserialize, Serialize};
 use std::{
     path::PathBuf,
@@ -29,6 +29,7 @@ use tokio::{
         BufWriter,
     },
 };
+use url::Url;
 
 use crate::plugins::{
     application::{ApplicationPlugin, ApplicationLog},
@@ -144,6 +145,179 @@ impl ImmicDb {
         sqlx::migrate!("./migrations")
             .run(pool)
             .await?;
+
+        self.migrate_browser2(&pool).await?;
+
+        Ok(())
+    }
+
+    async fn migrate_browser2(&self, pool: &Pool<Sqlite>) -> Result<()> {
+        // check if browser2 table has data
+        let (count,) = sqlx::query_as::<_, (i64,)>(
+            r#"
+            SELECT COUNT(*)
+            FROM browser2_log
+            "#
+        )
+        .fetch_one(pool)
+        .await?;
+        if count > 0 {
+            debug!("browser_log has already migrated");
+            return Ok(());
+        }
+
+        let mut rows = sqlx::query_as::<_, (
+            i64, i64,
+            i64, Option<String>, Option<i64>, Option<i64>, Option<i64>,
+            i64, String, Option<String>,
+            Option<String>,
+        )>(
+            r#"
+            SELECT
+            e.id, e.timestamp,
+            b.id, b.title, b.tab_id, b.opener_tab_id, b.window_id,
+            i.id, i.url, i.fav_icon_url,
+            r.url
+            FROM event_log e
+            INNER JOIN browser_log b ON e.id = b.event_id
+            INNER JOIN browser_info i ON b.info_id = i.id
+            LEFT JOIN browser_info r ON b.referrer_id = r.id
+            WHERE e.kind = "browser"
+            ORDER BY e.id
+            "#
+        )
+        .fetch(pool);
+
+        while let Some(row) = rows.try_next().await? {
+            let (
+                event_id, timestamp,
+                id, title, tab_id, opener_tab_id, window_id,
+                _info_id, url, fav_icon_url,
+                referrer,
+            ) = row;
+
+            debug!("migrate browser2: {}: {}", id, url);
+
+            match Url::parse(&url) {
+                Err(e) => {
+                    debug!("url parse error: {}", e);
+                    continue;
+                },
+                Ok(ref parsed) => {
+                    let origin: &str = &parsed[..url::Position::AfterPort];
+                    let url: &str = &parsed[..url::Position::AfterPath];
+                    let query: &str = &parsed[url::Position::BeforeQuery..];
+
+                    // Upsert browser2_origin
+                    let result = sqlx::query(
+                        r#"
+                        INSERT OR REPLACE INTO browser2_origin (id, origin, fav_icon_url)
+                        VALUES (
+                            (SELECT id FROM browser2_origin WHERE origin = ?),
+                            ?,
+                            ?
+                        );
+                        "#
+                    )
+                    .bind(origin)
+                    .bind(origin)
+                    .bind(&fav_icon_url)
+                    .execute(pool)
+                    .await?;
+                    let origin_id = result.last_insert_rowid();
+
+                    // Upsert browser2_url
+                    let result = sqlx::query(
+                        r#"
+                        INSERT OR REPLACE INTO browser2_url (id, url, origin_id, last_update)
+                        VALUES (
+                            (SELECT id FROM browser2_url WHERE url = ?),
+                            ?,
+                            ?,
+                            ?
+                        );
+                        "#
+                    )
+                    .bind(url)
+                    .bind(url)
+                    .bind(origin_id)
+                    .bind(timestamp)
+                    .execute(pool)
+                    .await?;
+                    let url_id = result.last_insert_rowid();
+
+                    let mut referrer_id = None;
+                    if let Some(ref referrer) = referrer {
+                        match Url::parse(referrer) {
+                            Err(e) =>  {
+                                error!("referrer parse error: {}", e);
+                            },
+                            Ok(ref referrer_parsed) => {
+                                let referrer_origin: &str = &referrer_parsed[..url::Position::AfterPort];
+                                let referrer_url: &str = &referrer_parsed[..url::Position::AfterPath];
+                                
+                                // Upsert browser2_origin for referrer
+                                let result = sqlx::query(
+                                    r#"
+                                    INSERT OR REPLACE INTO browser2_origin (id, origin)
+                                    VALUES (
+                                        (SELECT id FROM browser2_origin WHERE origin = ?),
+                                        ?
+                                    );
+                                    "#
+                                )
+                                .bind(referrer_origin)
+                                .bind(referrer_origin)
+                                .execute(pool)
+                                .await?;
+                                let referrer_origin_id = result.last_insert_rowid();
+
+                                // Upsert browser2_url for referrer
+                                let result = sqlx::query(
+                                    r#"
+                                    INSERT OR REPLACE INTO browser2_url (id, url, origin_id)
+                                    VALUES (
+                                        (SELECT id FROM browser2_url WHERE url = ?),
+                                        ?,
+                                        ?
+                                    );
+                                    "#
+                                )
+                                .bind(referrer_url)
+                                .bind(referrer_url)
+                                .bind(referrer_origin_id)
+                                .execute(pool)
+                                .await?;
+
+                                referrer_id = Some(result.last_insert_rowid());
+                            },
+                        }
+                    }
+
+                    // INSERT INTO browser2_log
+                    sqlx::query(
+                        r#"
+                        INSERT INTO browser2_log (event_id, origin_id, url_id, url_query, title, referrer_id, tab_id, opener_tab_id, window_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        "#
+                    )
+                    .bind(event_id)
+                    .bind(origin_id)
+                    .bind(url_id)
+                    .bind(query)
+                    .bind(title)
+                    .bind(referrer_id)
+                    .bind(tab_id)
+                    .bind(opener_tab_id)
+                    .bind(window_id)
+                    .execute(pool)
+                    .await?;
+                },
+            }
+        }
+
+        debug!("migrate browser2 done");
+
         Ok(())
     }
 
@@ -153,12 +327,12 @@ impl ImmicDb {
         Ok(())
     }
 
-    pub async fn insert_eventlog(&self, datetime: DateTime<Utc>, kind: &str) -> Result<i64> {
+    pub async fn insert_eventlog(&self, datetime: &DateTime<Utc>, kind: &str) -> Result<i64> {
         let pool = self.pool().await?;
         self.insert_eventlog_with(&pool, datetime, kind).await
     }
 
-    pub async fn insert_eventlog_with(&self, pool: &Pool<Sqlite>, datetime: DateTime<Utc>, kind: &str) -> Result<i64> {
+    pub async fn insert_eventlog_with(&self, pool: &Pool<Sqlite>, datetime: &DateTime<Utc>, kind: &str) -> Result<i64> {
         // timestamp to date string in local timezone
         let ts = datetime.timestamp();
         let local_time = datetime.with_timezone(&chrono::Local);
@@ -386,6 +560,7 @@ pub fn partition_logs<T: Timestamp>(logs: Vec<T>, local_time: &DateTime<Local>, 
 
 // Export and Import
 
+// trait objectを使った方が拡張性はあるのだけど
 #[derive(Debug, Deserialize, Serialize)]
 pub enum AnyLog {
     ApplicationLogEntry(ApplicationLog),

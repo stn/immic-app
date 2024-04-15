@@ -3,6 +3,7 @@
 CREATE TABLE IF NOT EXISTS file_info (
     id INTEGER PRIMARY KEY
 ,   path TEXT NOT NULL UNIQUE
+,   last_update INTEGER
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS file_info_path ON file_info (path);
@@ -12,7 +13,7 @@ CREATE TABLE IF NOT EXISTS file_log (
 ,   event_id INTEGER NOT NULL UNIQUE
 ,   info_id INTEGER NOT NULL
 ,   kind TEXT
-,   FOREIGN KEY(event_id) REFERENCES event_log ON DELETE CASCADE
+,   FOREIGN KEY(event_id) REFERENCES event_log
 ,   FOREIGN KEY(info_id) REFERENCES file_info
 );
 

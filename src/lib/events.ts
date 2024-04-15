@@ -30,23 +30,15 @@ export type ApplicationInfo = {
 
 export type BrowserLog = {
     id: number
-    event_id: number
     timestamp: number
     date: string
-    info_id: number
     url: string
-    fav_icon_url?: string
     title?: string
+    fav_icon_url?: string
     referrer?: string
     tab_id?: number
     opener_tab_id?: number
     window_id?: number
-}
-
-export type BrowserInfo = {
-    id: number
-    url: string
-    fav_icon_url?: string
 }
 
 export type FileLog = {
