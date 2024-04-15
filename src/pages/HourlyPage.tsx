@@ -109,7 +109,8 @@ function HourlyPage() {
                               <Tooltip>
                                 <TooltipTrigger>
                                   {/* <div className="text-left">{timestamp_mm(app.timestamp)} {app.name}</div> */}
-                                  <div className="text-left">{app.title}</div>
+                                  <div className="text-left">{app.name}</div>
+                                  <div className="text-left pl-6">{app.title}</div>
                                 </TooltipTrigger>
                                 <TooltipContent side="bottom">
                                   {app.path}

@@ -11,8 +11,8 @@ export type ApplicationLog = {
     timestamp: number
     date: string
     info_id: number
-    name: string
-    path?: string
+    path: string
+    name?: string
     process_id?: number
     title?: string
     x?: number
@@ -20,12 +20,6 @@ export type ApplicationLog = {
     width?: number
     height?: number
     ref_id?: number
-}
-
-export type ApplicationInfo = {
-    id: number
-    path?: string
-    name?: string
 }
 
 export type BrowserLog = {

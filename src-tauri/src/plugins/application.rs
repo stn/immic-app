@@ -1,5 +1,5 @@
 use active_win_pos_rs::get_active_window;
-use anyhow::{anyhow, Context as _, Result};
+use anyhow::{Context as _, Result};
 use chrono::{DateTime, Utc};
 use futures::TryStreamExt;
 use log::debug;
@@ -41,7 +41,7 @@ pub fn init() -> TauriPlugin<Wry> {
     plugin::Builder::new("application")
         .invoke_handler(tauri::generate_handler![
             list_application_logs_on,
-            get_application_info,
+            // get_application_info,
         ])
         .setup(|app_handle| {
             debug!("application plugin setup");
@@ -135,63 +135,25 @@ impl ApplicationPlugin {
     async fn insert_win_info(&self, win_info: &WinInfo) -> Result<(i64, i64)> {
         let timestamp = Utc::now();
 
-        // Insert event_log
         let db = self.app.state::<db::ImmicDb>();
-        let event_id = db.insert_eventlog(&timestamp, KIND).await?;
-
-        // Search application_info by path
         let pool = db.pool().await.unwrap();
-        let result = sqlx::query_as::<_, (i64,)>(
-            r#"
-            SELECT id
-            FROM application_info
-            WHERE path = ?
-            "#
-        )
-        .bind(&win_info.path)
-        .fetch_one(&pool)
-        .await;
 
-        let info_id = match result {
-            Ok((id,)) => id,
-            Err(_) => {
-                // Insert application_info for new path
-                let result = sqlx::query(
-                    r#"
-                    INSERT INTO application_info (path, name)
-                    VALUES (?, ?)
-                    "#
-                )
-                .bind(&win_info.path)
-                .bind(&win_info.name)
-                .execute(&pool)
-                .await?;
-                result.last_insert_rowid()
-            }
+        let application_log = ApplicationLog {
+            id: 0,  // dummy
+            timestamp: timestamp.timestamp(),
+            date: "".to_string(), // dummy
+            path: win_info.path.clone(),
+            name: Some(win_info.name.clone()),
+            process_id: Some(win_info.process_id),
+            title: Some(win_info.title.clone()),
+            x: Some(win_info.x),
+            y: Some(win_info.y),
+            width: Some(win_info.width),
+            height: Some(win_info.height),
+            ref_id: None,
         };
 
-        let result = sqlx::query(
-            r#"
-            INSERT INTO application_log (event_id, info_id, process_id, title, x, y, width, height)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            "#
-        )
-        .bind(event_id)
-        .bind(info_id)
-        .bind(win_info.process_id)
-        .bind(&win_info.title)
-        .bind(win_info.x)
-        .bind(win_info.y)
-        .bind(win_info.width)
-        .bind(win_info.height)
-        .execute(&pool)
-        .await?;
-
-        // Update event_log with log_id
-        let log_id = result.last_insert_rowid();
-        // db.update_eventlog_logid(event_id, log_id).await?;
-
-        Ok((log_id, info_id))
+        self.insert_application_log_with(&pool, &application_log).await
     }
 
     async fn insert_win_info_ref(&self, ref_id: i64, info_id: i64) -> Result<i64> {
@@ -214,10 +176,7 @@ impl ApplicationPlugin {
         .execute(&pool)
         .await?;
 
-        // Update event_log with log_id
         let log_id = result.last_insert_rowid();
-        // db.update_eventlog_logid(event_id , log_id).await?;
-
         Ok(log_id)
     }
 
@@ -277,10 +236,7 @@ impl ApplicationPlugin {
         .execute(pool)
         .await?;
 
-        // Update event_log with log_id
         let log_id = result.last_insert_rowid();
-        // db.update_eventlog_logid_with(pool, event_id, log_id).await?;
-
         Ok((log_id, info_id))
     }
 
@@ -308,10 +264,7 @@ impl ApplicationPlugin {
         .execute(pool)
         .await?;
 
-        // Update event_log with log_id
         let log_id = result.last_insert_rowid();
-        // db.update_eventlog_logid_with(pool, event_id, log_id).await?;
-
         Ok(log_id)
     }
 
@@ -320,13 +273,13 @@ impl ApplicationPlugin {
         let pool = db.pool().await.context("db pool is not set")?;
 
         let mut rows = sqlx::query_as::<_, (
-            i64, i64,
+            i64,
             i64, Option<i64>, Option<String>, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>,
-            i64, String, Option<String>,
+            String, Option<String>,
         )>(
             r#"
             SELECT
-            e.id, e.timestamp,
+            e.timestamp,
             a.id,
             coalesce(a.process_id, a0.process_id) as process_id,
             coalesce(a.title, a0.title) as title,
@@ -335,7 +288,7 @@ impl ApplicationPlugin {
             coalesce(a.width, a0.width) as width,
             coalesce(a.height, a0.height) as height,
             a.ref_id,
-            i.id, i.name, i.path
+            i.path, i.name
             FROM event_log e
             INNER JOIN application_log a ON e.id = a.event_id
             INNER JOIN application_info i ON a.info_id = i.id
@@ -351,18 +304,16 @@ impl ApplicationPlugin {
         let mut application_logs = Vec::new();
         while let Some(row) = rows.try_next().await? {
             let (
-                event_id, timestamp,
+                timestamp,
                 id, process_id, title, x, y, width, height, ref_id,
-                info_id, name, path,
+                path, name,
             ) = row;
             application_logs.push(ApplicationLog {
                 id,
-                event_id,
                 timestamp,
                 date: date.clone(),
-                info_id,
-                name,
                 path,
+                name,
                 process_id,
                 title,
                 x,
@@ -375,35 +326,35 @@ impl ApplicationPlugin {
         Ok(application_logs)
     }
 
-    pub async fn get_application_info(&self, app_id: i64) -> Result<ApplicationInfo> {
-        debug!("get_application_info: app_id={}", app_id);
+    // pub async fn get_application_info(&self, app_id: i64) -> Result<ApplicationInfo> {
+    //     debug!("get_application_info: app_id={}", app_id);
 
-        let db = self.app.state::<db::ImmicDb>();
-        let pool = db.pool().await.unwrap();
-        let result = sqlx::query_as::<_, (i64, String, Option<String>)>(
-            r#"
-            SELECT id, path, name
-            FROM application_info
-            WHERE id = ?
-            "#
-        )
-        .bind(app_id)
-        .fetch_one(&pool)
-        .await;
+    //     let db = self.app.state::<db::ImmicDb>();
+    //     let pool = db.pool().await.unwrap();
+    //     let result = sqlx::query_as::<_, (i64, String, Option<String>)>(
+    //         r#"
+    //         SELECT id, path, name
+    //         FROM application_info
+    //         WHERE id = ?
+    //         "#
+    //     )
+    //     .bind(app_id)
+    //     .fetch_one(&pool)
+    //     .await;
         
-        match result {
-            Ok((id, path, name)) => {
-                Ok(ApplicationInfo {
-                    id: id,
-                    path: path,
-                    name: name,
-                })
-            },
-            Err(_) => {
-                Err(anyhow!("Not found"))
-            }
-        }
-    }
+    //     match result {
+    //         Ok((id, path, name)) => {
+    //             Ok(ApplicationInfo {
+    //                 id: id,
+    //                 path: path,
+    //                 name: name,
+    //             })
+    //         },
+    //         Err(_) => {
+    //             Err(anyhow!("Not found"))
+    //         }
+    //     }
+    // }
 }
 
 #[derive(Debug,PartialEq)]
@@ -447,12 +398,10 @@ async fn check_application() -> Option<WinInfo> {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ApplicationLog {
     pub id: i64,
-    pub event_id: i64,
     pub timestamp: i64,
     pub date: String,
-    pub info_id: i64,
-    pub name: String,
-    pub path: Option<String>,
+    pub path: String,
+    pub name: Option<String>,
     pub process_id: Option<i64>,
     pub title: Option<String>,
     pub x: Option<i64>,
@@ -468,19 +417,19 @@ impl db::Timestamp for ApplicationLog {
     }
 }
 
-#[derive(Debug, Serialize)]
-pub struct ApplicationInfo {
-    pub id: i64,
-    pub path: String,
-    pub name: Option<String>,
-}
+// #[derive(Debug, Serialize)]
+// pub struct ApplicationInfo {
+//     pub id: i64,
+//     pub path: String,
+//     pub name: Option<String>,
+// }
 
 #[tauri::command]
 pub async fn list_application_logs_on(application: State<'_, ApplicationPlugin>, date: String) -> Result<Vec<ApplicationLog>, String> {
     application.list_application_logs_on(date).await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-pub async fn get_application_info(application: State<'_, ApplicationPlugin>, app_id: i64) -> Result<ApplicationInfo, String> {
-    application.get_application_info(app_id).await.map_err(|e| e.to_string())
-}
+// #[tauri::command]
+// pub async fn get_application_info(application: State<'_, ApplicationPlugin>, app_id: i64) -> Result<ApplicationInfo, String> {
+//     application.get_application_info(app_id).await.map_err(|e| e.to_string())
+// }
