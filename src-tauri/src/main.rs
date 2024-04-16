@@ -24,6 +24,12 @@ async fn main() {
     tauri::async_runtime::set(tokio::runtime::Handle::current());
 
     tauri::Builder::default()
+        // single instance
+        // https://github.com/tauri-apps/plugins-workspace/tree/v1/plugins/single-instance
+        .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
+            // received a message from another instance
+            info!("single-instance: {}, {argv:?}, {cwd}", app.package_info().name);
+        }))
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
