@@ -281,7 +281,7 @@ fn image_path(dir: &PathBuf, timestamp: &DateTime<Utc>, monitor_id: i64) -> Path
         std::fs::create_dir(&date_dir).unwrap();
     }
     let basename = image_basename(timestamp, monitor_id);
-    date_dir.join(format!("{}.jpg", basename))
+    date_dir.join(format!("{}.png", basename))
 }
 
 fn is_blank(image: &RgbaImage) -> bool {
@@ -337,7 +337,7 @@ pub fn handle_iss_protocol(app: &AppHandle, request: &http::Request) -> Result<h
     let screen_dir = image_base_dir(app).expect("image_dir is not set");
 
     let date_dir = screen_dir.join(date);
-    let path = date_dir.join(format!("{}.jpg", filename));
+    let path = date_dir.join(format!("{}.png", filename));
     if path.exists() {
         let builder = http::ResponseBuilder::new();
         let response = if let Ok(data) = fs::read(path) {
