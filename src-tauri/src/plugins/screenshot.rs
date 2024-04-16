@@ -341,7 +341,7 @@ pub fn handle_iss_protocol(app: &AppHandle, request: &http::Request) -> Result<h
     if path.exists() {
         let builder = http::ResponseBuilder::new();
         let response = if let Ok(data) = fs::read(path) {
-            builder.status(200).mimetype("image/jpeg").body(data).unwrap()
+            builder.status(200).mimetype("image/png").body(data).unwrap()
         } else {
             builder.status(404).body(Vec::new()).unwrap()
         };
