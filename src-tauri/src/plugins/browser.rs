@@ -294,20 +294,11 @@ impl BrowserPlugin {
         .fetch_one(&pool)
         .await;
 
-        if let Ok((last_update,)) = result {
-            // debug!("last_update: {:?}", last_update);
-
-            match last_update {
-                Some(last_update) => {
-                    if timestamp - last_update < DEBOUNCE_THRESHOLD {
-                        // faviconの更新があるケースがあるのをどうするか。
-                        // faviconの更新だけここで行うか？
-                        return Ok(true);
-                    }
-                },
-                None => {
-                    return Ok(false);
-                }
+        if let Ok((Some(last_update),)) = result {
+            if timestamp - last_update < DEBOUNCE_THRESHOLD {
+                // faviconの更新があるケースがあるのをどうするか。
+                // faviconの更新だけここで行うか？
+                return Ok(true);
             }
         }
 
