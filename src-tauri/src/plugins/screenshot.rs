@@ -178,17 +178,17 @@ impl ScreenshotPlugin {
         Ok(log_id)
     }
 
-    pub async fn list_screenshot_logs_on(&self, date: String) -> Result<Vec<ScreenshotLog>> {
+    pub async fn list_screenshot_logs_on(&self, date: &str) -> Result<Vec<ScreenshotLog>> {
         let db = self.app.state::<db::ImmicDb>();
         let pool = db.pool().await.context("db pool is not set")?;
 
         let mut rows = sqlx::query_as::<_, (
-            i64, String,
+            i64,
             i64, i64
         )>(
             r#"
             SELECT
-            e.timestamp, e.date,
+            e.timestamp,
             s.id, s.monitor_id
             FROM event_log e
             INNER JOIN screenshot s ON e.id = s.event_id
@@ -203,13 +203,13 @@ impl ScreenshotPlugin {
         let mut screenshot_logs = Vec::new();
         while let Some(row) = rows.try_next().await? {
             let (
-                timestamp, date,
+                timestamp,
                 id, monitor_id,
             ) = row;
             screenshot_logs.push(ScreenshotLog {
                 id,
                 timestamp,
-                date,
+                date: date.to_string(),
                 monitor_id,
             });
         }
@@ -362,7 +362,7 @@ fn check_iss_uri(uri: &str) -> bool {
 
 #[tauri::command]
 pub async fn list_screenshot_logs_on(screenshot_plugin: State<'_, ScreenshotPlugin>, date: String) -> Result<Vec<ScreenshotLog>, String> {
-    screenshot_plugin.list_screenshot_logs_on(date).await.map_err(|e| e.to_string())
+    screenshot_plugin.list_screenshot_logs_on(&date).await.map_err(|e| e.to_string())
 }
 
 // pub async fn get_screenshots_for(screenshot_plugin: State<'_, ScreenshotPlugin>, timeframe: i64) -> Result<Vec<String>, String> {

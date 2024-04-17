@@ -373,7 +373,7 @@ impl FilelogPlugin {
         Ok(false)
     }
 
-    pub async fn list_file_logs_on(&self, date: String) -> Result<Vec<FileLog>> {
+    pub async fn list_file_logs_on(&self, date: &str) -> Result<Vec<FileLog>> {
         let db = self.app.state::<db::ImmicDb>();
         let pool = db.pool().await.context("db pool is not set")?;
 
@@ -398,7 +398,7 @@ impl FilelogPlugin {
             "#
         )
         .bind(KIND)
-        .bind(&date)
+        .bind(date)
         .fetch(&pool);
 
         let mut filelogs = Vec::new();
@@ -412,7 +412,7 @@ impl FilelogPlugin {
             filelogs.push(FileLog {
                 id,
                 timestamp,
-                date: date.clone(),
+                date: date.to_string(),
                 path,
                 kind,
                 watch_dir,
@@ -563,7 +563,7 @@ impl db::Timestamp for FileLog {
 
 #[tauri::command]
 pub async fn list_file_logs_on(file_log: State<'_, FilelogPlugin>, date: String) -> Result<Vec<FileLog>, String> {
-    file_log.list_file_logs_on(date).await.map_err(|e| e.to_string())
+    file_log.list_file_logs_on(&date).await.map_err(|e| e.to_string())
 }
 
 // #[tauri::command]

@@ -43,10 +43,10 @@ pub fn init() -> TauriPlugin<Wry> {
             list_application_logs_on,
             // get_application_info,
         ])
-        .setup(|app_handle| {
+        .setup(|app| {
             debug!("application plugin setup");
-            let application = ApplicationPlugin::new(app_handle);
-            app_handle.manage(application);
+            let application = ApplicationPlugin::new(app.clone());
+            app.manage(application);
             Ok(())
         })
         .build()
@@ -59,9 +59,9 @@ pub struct ApplicationPlugin {
 }
 
 impl ApplicationPlugin {
-    fn new(app: &AppHandle) -> Self {
+    fn new(app: AppHandle) -> Self {
         Self {
-            app: app.clone(),
+            app,
             running: Arc::new(Mutex::new(false)),
         }
     }
@@ -268,7 +268,7 @@ impl ApplicationPlugin {
         Ok(log_id)
     }
 
-    pub async fn list_application_logs_on(&self, date: String) -> Result<Vec<ApplicationLog>> {
+    pub async fn list_application_logs_on(&self, date: &str) -> Result<Vec<ApplicationLog>> {
         let db = self.app.state::<db::ImmicDb>();
         let pool = db.pool().await.context("db pool is not set")?;
 
@@ -298,7 +298,7 @@ impl ApplicationPlugin {
             "#
         )
         .bind(KIND)
-        .bind(&date)
+        .bind(date)
         .fetch(&pool);
 
         let mut application_logs = Vec::new();
@@ -311,7 +311,7 @@ impl ApplicationPlugin {
             application_logs.push(ApplicationLog {
                 id,
                 timestamp,
-                date: date.clone(),
+                date: date.to_string(),
                 path,
                 name,
                 process_id,
@@ -426,7 +426,7 @@ impl db::Timestamp for ApplicationLog {
 
 #[tauri::command]
 pub async fn list_application_logs_on(application: State<'_, ApplicationPlugin>, date: String) -> Result<Vec<ApplicationLog>, String> {
-    application.list_application_logs_on(date).await.map_err(|e| e.to_string())
+    application.list_application_logs_on(&date).await.map_err(|e| e.to_string())
 }
 
 // #[tauri::command]

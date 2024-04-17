@@ -41,7 +41,7 @@ pub fn init() -> TauriPlugin<Wry> {
         ])
         .setup(|app_handle| {
             debug!("browser plugin setup");
-            let browser = BrowserPlugin::new(app_handle);
+            let browser = BrowserPlugin::new(app_handle.clone());
             app_handle.manage(browser);
             Ok(())
         })
@@ -54,9 +54,9 @@ pub struct BrowserPlugin {
 }
 
 impl BrowserPlugin {
-    fn new(app: &AppHandle) -> Self {
+    fn new(app: AppHandle) -> Self {
         Self {
-            app: app.clone(),
+            app
         }
     }
 
@@ -73,9 +73,9 @@ impl BrowserPlugin {
         assert!(info.url.is_some(), "url is required");
 
         let db = self.app.state::<ImmicDb>();
-        let pool = db.pool().await.expect("db pool is not set");
+        let pool = db.pool().await.context("db pool is not set")?;
 
-        let timestamp = DateTime::from_timestamp_millis(info.timestampMs).expect("Invalid timestamp");
+        let timestamp = DateTime::from_timestamp_millis(info.timestampMs).context("Invalid timestamp")?;
         let browser_log = BrowserLog {
             id: 0,  // dummy
             timestamp: timestamp.timestamp(),
@@ -316,7 +316,7 @@ impl BrowserPlugin {
         Ok(false)
     }
 
-    pub async fn list_browser_logs_on(&self, date: String) -> Result<Vec<BrowserLog>> {
+    pub async fn list_browser_logs_on(&self, date: &str) -> Result<Vec<BrowserLog>> {
         let db = self.app.state::<ImmicDb>();
         let pool = db.pool().await.context("db pool is not set")?;
 
@@ -344,7 +344,7 @@ impl BrowserPlugin {
             "#
         )
         .bind(KIND)
-        .bind(&date)
+        .bind(date)
         .fetch(&pool);
 
         let mut browserlogs = Vec::new();
@@ -369,7 +369,7 @@ impl BrowserPlugin {
             browserlogs.push(BrowserLog {
                 id,
                 timestamp,
-                date: date.clone(),
+                date: date.to_string(),
                 url,
                 title,
                 fav_icon_url,
@@ -483,7 +483,7 @@ fn parse_url(url: &str) -> Result<(String, String, Option<String>)> {
 
 #[tauri::command]
 pub async fn list_browser_logs_on(browser: State<'_, BrowserPlugin>, date: String) -> Result<Vec<BrowserLog>, String> {
-    browser.list_browser_logs_on(date).await.map_err(|e| e.to_string())
+    browser.list_browser_logs_on(&date).await.map_err(|e| e.to_string())
 }
 
 // #[tauri::command]

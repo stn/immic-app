@@ -1,10 +1,10 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context as _, Result};
 use chrono::{DateTime, Local, Timelike, Utc};
 use futures::TryStreamExt;
 use log::debug;
 use serde::{Deserialize, Serialize};
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Mutex,
 };
 use sqlx::{
@@ -90,8 +90,7 @@ impl ImmicDb {
     }
 
     pub async fn pool(&self) -> Result<Pool<Sqlite>> {
-        self.pool.lock().unwrap().clone()
-            .ok_or_else(|| anyhow!("pool is not initialized"))
+        self.pool.lock().unwrap().clone().context("pool is none")
     }
 
     pub fn start(&self) -> Result<()> {
@@ -109,6 +108,7 @@ impl ImmicDb {
             .synchronous(SqliteSynchronous::Normal);
         let pool = SqlitePoolOptions::new().connect_lazy_with(options);
         self.pool.lock().unwrap().replace(pool);
+
         Ok(())
     }
 
@@ -120,16 +120,14 @@ impl ImmicDb {
         self.db_path_with(IMPORT_DATABASE_FILE)
     }
 
-    fn db_path_with(&self, database_file: &str) -> Result<PathBuf> {
+    fn db_path_with(&self, database_filename: &str) -> Result<PathBuf> {
         let setting = self.app.state::<SettingPlugin>();
         let data_dir = setting.get(DATA_DIR_SETTING)?
-            .and_then(|v| v.as_str().map(|s| s.to_string()))
-            .map(PathBuf::from);
+            .and_then(|v| v.as_str().map(PathBuf::from));
         if data_dir.is_none() {
-            return Err(anyhow!("{} is not set", DATA_DIR_SETTING));
+            return Err(anyhow!("{} is not set or invalid", DATA_DIR_SETTING));
         }
-
-        let db_path = data_dir.unwrap().join(database_file);
+        let db_path = data_dir.unwrap().join(database_filename);
         Ok(db_path)
     }
 
@@ -148,8 +146,10 @@ impl ImmicDb {
     }
 
     pub async fn stop(&self) -> Result<()> {
-        let pool = self.pool().await?;
-        pool.close().await;
+        let pool = self.pool.lock().unwrap().take();
+        if let Some(pool) = pool {
+            pool.close().await;
+        }
         Ok(())
     }
 
@@ -212,18 +212,18 @@ impl ImmicDb {
         Ok(dates)
     }
 
-    pub async fn list_any_logs_on(&self, date: String) -> Result<Vec<AnyLog>> {
+    pub async fn list_any_logs_on(&self, date: &str) -> Result<Vec<AnyLog>> {
         let application = self.app.state::<ApplicationPlugin>();
-        let application_logs = application.list_application_logs_on(date.clone()).await?;
+        let application_logs = application.list_application_logs_on(date).await?;
 
         let browser = self.app.state::<BrowserPlugin>();
-        let browser_logs = browser.list_browser_logs_on(date.clone()).await?;
+        let browser_logs = browser.list_browser_logs_on(date).await?;
 
         let filelog = self.app.state::<FilelogPlugin>();
-        let file_logs = filelog.list_file_logs_on(date.clone()).await?;
+        let file_logs = filelog.list_file_logs_on(date).await?;
 
         let screenshot = self.app.state::<ScreenshotPlugin>();
-        let screenshot_logs = screenshot.list_screenshot_logs_on(date.clone()).await?;
+        let screenshot_logs = screenshot.list_screenshot_logs_on(date).await?;
 
         Ok(application_logs.into_iter().map(AnyLog::ApplicationLogEntry)
             .chain(browser_logs.into_iter().map(AnyLog::BrowserLogEntry))
@@ -232,7 +232,7 @@ impl ImmicDb {
             .collect())
     }
 
-    pub async fn export_logs(&self, filename: String) -> Result<()> {
+    pub async fn export_logs(&self, filename: impl AsRef<Path>) -> Result<()> {
         let file = File::options()
             .write(true)
             .create_new(true)
@@ -241,7 +241,7 @@ impl ImmicDb {
         let mut writer = BufWriter::new(file);
         let mut dates = self.list_eventlog_dates().await?;
         dates.sort();
-        for date in dates.into_iter() {
+        for date in &dates {
             let logs = self.list_any_logs_on(date).await?;
             for log in logs.into_iter() {
                 let line = serde_json::to_string(&log)?;
@@ -254,9 +254,7 @@ impl ImmicDb {
         Ok(())
     }
 
-    pub async fn import_logs(&self, filename: String) -> Result<()> {
-        debug!("import_logs: {}", filename);
-
+    pub async fn import_logs(&self, filename: impl AsRef<Path>) -> Result<()> {
         let file = File::open(filename).await?;
         let mut reader = BufReader::new(file);
 
@@ -327,7 +325,7 @@ pub async fn list_eventlog_dates(db: State<'_, ImmicDb>) -> Result<Vec<String>, 
 
 #[tauri::command]
 pub async fn list_any_logs_on(db: State<'_, ImmicDb>, date: String) -> Result<Vec<AnyLog>, String> {
-    db.list_any_logs_on(date).await.map_err(|e| e.to_string())
+    db.list_any_logs_on(&date).await.map_err(|e| e.to_string())
 }
 
 // Interval
@@ -397,10 +395,10 @@ pub enum AnyLog {
 
 #[tauri::command]
 pub async fn export_logs(db: State<'_, ImmicDb>, filename: String) -> Result<(), String> {
-    db.export_logs(filename).await.map_err(|e| e.to_string())
+    db.export_logs(&filename).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn import_logs(db: State<'_, ImmicDb>, filename: String) -> Result<(), String> {
-    db.import_logs(filename).await.map_err(|e| e.to_string())
+    db.import_logs(&filename).await.map_err(|e| e.to_string())
 }
