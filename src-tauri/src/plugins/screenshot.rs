@@ -10,7 +10,10 @@ use std::{
     error::Error,
     fs,
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 use sqlx::{
     Pool,
@@ -54,7 +57,7 @@ pub fn init() -> TauriPlugin<Wry> {
 pub struct ScreenshotPlugin {
     app: AppHandle,
     image_dir: Arc<Mutex<Option<PathBuf>>>,
-    running: Arc<Mutex<bool>>,
+    running: Arc<AtomicBool>,
 }
 
 impl ScreenshotPlugin {
@@ -62,36 +65,26 @@ impl ScreenshotPlugin {
         Self {
             app,
             image_dir: Arc::new(Mutex::new(None)),
-            running: Arc::new(Mutex::new(false)),
+            running: Arc::new(AtomicBool::new(false)),
         }
     }
 
     pub fn start(&self) -> Result<()> {
         debug!("ScreenshotPlugin start");
 
-        let image_dir = image_base_dir(&self.app);
-        if let Err(e) = image_dir {
-            error!("failed to get image_dir: {}", e);
-            return Err(e);
-        }
-        let image_dir = image_dir.unwrap();
+        let image_dir = image_base_dir(&self.app)?;
         debug!("image_dir: {:?}", image_dir);
         self.image_dir.lock().unwrap().replace(image_dir);
 
-        // if self.image_dir.is_none() {
-        //     return Err(anyhow!("image_dir is not set"));
-        // }
-
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
-        // let image_dir = self.image_dir.unwrap().clone();
-        *self.running.lock().unwrap() = true;
+        self.running.store(true, Ordering::Relaxed);
         let self_clone = self.clone();
         tokio::spawn(async move {
             loop {
-                if !*self_clone.running.lock().unwrap() {
+                interval.tick().await;
+                if !self_clone.running.load(Ordering::Relaxed) {
                     break;
                 }
-                interval.tick().await;
                 self_clone.take_screenshot().await.unwrap_or_else(|e| {
                     error!("Error on taking screenshot: {:?}", e);
                 });
@@ -102,12 +95,12 @@ impl ScreenshotPlugin {
     }
 
     pub fn stop(&self) {
-        *self.running.lock().unwrap() = false;
+        self.running.store(false, Ordering::Relaxed);
     }
 
     async fn take_screenshot(&self) -> Result<()> {
         debug!("screenshot");
-        let monitors = Monitor::all().unwrap();
+        let monitors = Monitor::all()?;
 
         for monitor in monitors {
             if monitor.is_primary() { // save only the primary monitor
@@ -121,17 +114,17 @@ impl ScreenshotPlugin {
                     break;
                 }
                 self.save_screenshot(&screenshot).await?;
-                self.insert_screenshot(&screenshot).await?;
+                self.insert_screenshot(screenshot).await?;
             }
         }
         Ok(())
     }
 
-    async fn insert_screenshot(&self, screenshot: &Screenshot) -> Result<i64> {
+    async fn insert_screenshot(&self, screenshot: Screenshot) -> Result<i64> {
         let db = self.app.state::<db::ImmicDb>();
         let event_id = db.insert_eventlog(&screenshot.timestamp, KIND).await?;
 
-        let pool = db.pool().await.expect("db pool is not set");
+        let pool = db.pool().await?;
         let result = sqlx::query(
             r#"
             INSERT INTO screenshot (event_id, monitor_id)
@@ -143,21 +136,19 @@ impl ScreenshotPlugin {
         .execute(&pool)
         .await?;
 
-        // Update event_log with log_id
         let log_id = result.last_insert_rowid();
-        // db.update_eventlog_logid(event_id, log_id).await?;
         Ok(log_id)
     }
 
     async fn save_screenshot(&self, screenshot: &Screenshot) -> Result<()> {
         let image_dir = self.image_dir.lock().unwrap().clone().unwrap();
-        let path = image_path(&image_dir, &screenshot.timestamp, screenshot.monitor);
-        screenshot.image.save(path).expect("failed to save screenshot");
+        let path = image_path(&image_dir, &screenshot.timestamp, screenshot.monitor)?;
+        screenshot.image.save(path).context("failed to save screenshot")?;
 
         Ok(())
     }
 
-    pub async fn insert_screenshot_log_with(&self, pool: &Pool<Sqlite>, log: &ScreenshotLog) -> Result<i64> {
+    pub async fn insert_screenshot_log_with(&self, pool: &Pool<Sqlite>, log: ScreenshotLog) -> Result<i64> {
         let timestamp = DateTime::from_timestamp(log.timestamp, 0).context("Invalid timestamp")?;
 
         let db = self.app.state::<db::ImmicDb>();
@@ -180,7 +171,7 @@ impl ScreenshotPlugin {
 
     pub async fn list_screenshot_logs_on(&self, date: &str) -> Result<Vec<ScreenshotLog>> {
         let db = self.app.state::<db::ImmicDb>();
-        let pool = db.pool().await.context("db pool is not set")?;
+        let pool = db.pool().await?;
 
         let mut rows = sqlx::query_as::<_, (
             i64,
@@ -261,7 +252,7 @@ fn image_base_dir(app: &AppHandle) -> Result<PathBuf> {
 
     // Create directories if not exists
     if !image_dir.exists() {
-        std::fs::create_dir_all(&image_dir).unwrap();
+        std::fs::create_dir_all(&image_dir)?;
     }
 
     Ok(image_dir)
@@ -275,13 +266,13 @@ fn image_basename(timestamp: &DateTime<Utc>, monitor_id: i64) -> String {
     format!("{}-{}", timestamp.format("%H%M%S"), monitor_id)
 }
 
-fn image_path(dir: &PathBuf, timestamp: &DateTime<Utc>, monitor_id: i64) -> PathBuf {
+fn image_path(dir: &PathBuf, timestamp: &DateTime<Utc>, monitor_id: i64) -> Result<PathBuf> {
     let date_dir = dir.join(image_dir_name(timestamp));
     if !date_dir.exists() {
-        std::fs::create_dir(&date_dir).unwrap();
+        std::fs::create_dir(&date_dir)?;
     }
     let basename = image_basename(timestamp, monitor_id);
-    date_dir.join(format!("{}.png", basename))
+    Ok(date_dir.join(format!("{}.png", basename)))
 }
 
 fn is_blank(image: &RgbaImage) -> bool {
@@ -331,19 +322,24 @@ pub fn handle_iss_protocol(app: &AppHandle, request: &http::Request) -> Result<h
     // split the uri into date directory and filename
     // skip the first 16 characters: iss://localhost/
     let mut parts = uri[16..].split('/');
-    let date = parts.next().unwrap();
-    let filename = parts.next().unwrap();
+    let date = parts.next().unwrap_or("");
+    let filename = parts.next().unwrap_or("");
+    // TODO: use regex instead of split
 
-    let screen_dir = image_base_dir(app).expect("image_dir is not set");
+    if date.is_empty() || filename.is_empty() {
+        return Err("Invalid uri".into());
+    }
+
+    let screen_dir = image_base_dir(app)?;
 
     let date_dir = screen_dir.join(date);
     let path = date_dir.join(format!("{}.png", filename));
     if path.exists() {
         let builder = http::ResponseBuilder::new();
         let response = if let Ok(data) = fs::read(path) {
-            builder.status(200).mimetype("image/png").body(data).unwrap()
+            builder.status(200).mimetype("image/png").body(data)?
         } else {
-            builder.status(404).body(Vec::new()).unwrap()
+            builder.status(404).body(Vec::new())?
         };
         Ok(response)
     } else {

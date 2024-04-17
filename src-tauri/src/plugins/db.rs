@@ -295,7 +295,7 @@ impl ImmicDb {
                     filelog.insert_file_log_with(&pool, log).await?;
                 },
                 AnyLog::ScreenshotLogEntry(log) => {
-                    screenshot.insert_screenshot_log_with(&pool, &log).await?;
+                    screenshot.insert_screenshot_log_with(&pool, log).await?;
                 },
             }
             line.clear();
