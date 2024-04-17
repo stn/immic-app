@@ -110,19 +110,19 @@ impl ScreenshotPlugin {
         let monitors = Monitor::all().unwrap();
 
         for monitor in monitors {
-            let screenshot = Screenshot {
-                monitor: monitor.id() as i64,
-                timestamp: chrono::Utc::now(),
-                image: monitor.capture_image()?,
-            };
-            if is_blank(&screenshot.image) {
-                debug!("Blank screen: monitor: {}", screenshot.monitor);
-                break;
+            if monitor.is_primary() { // save only the primary monitor
+                let screenshot = Screenshot {
+                    monitor: monitor.id() as i64,
+                    timestamp: chrono::Utc::now(),
+                    image: monitor.capture_image()?,
+                };
+                if is_blank(&screenshot.image) {
+                    debug!("Blank screen: monitor: {}", screenshot.monitor);
+                    break;
+                }
+                self.save_screenshot(&screenshot).await?;
+                self.insert_screenshot(&screenshot).await?;
             }
-            self.save_screenshot(&screenshot).await?;
-            self.insert_screenshot(&screenshot).await?;
-
-            break; // save only the first screen for now
         }
         Ok(())
     }
