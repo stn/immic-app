@@ -3,7 +3,7 @@
 
 use dotenv::dotenv;
 use tauri::Manager;
-use log::{error,info,warn};
+use log::{error,info};
 
 use immic_app::{
     app,
@@ -60,7 +60,7 @@ async fn main() {
                 // DB plugin
                 let db = app.state::<plugins::db::ImmicDb>();
                 if let Err(e) = db.start() {
-                    warn!("DB error: {}", e);
+                    error!("DB error: {}", e);
                     return;
                 }
                 if let Err(e) = db.migrate().await {

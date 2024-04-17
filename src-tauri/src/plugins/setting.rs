@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use log::{error, debug};
 use std::{
     path::PathBuf,
@@ -58,7 +58,7 @@ impl SettingPlugin {
     pub fn start(&self) -> Result<()> {
         debug!("setting plugin start");
         self.load().ok();
-        self.save().expect("failed to start setting plugin");
+        self.save().context("failed to start setting plugin")?;
         Ok(())
     }
 
