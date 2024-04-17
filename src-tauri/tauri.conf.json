@@ -57,6 +57,7 @@
     "windows": [
       {
         "label": "main",
+        "title": "Immic",
         "fullscreen": false,
         "resizable": true,
         "width": 2200,
