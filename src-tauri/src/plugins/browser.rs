@@ -4,7 +4,7 @@ use actix_web::{
     http, middleware, web,
     App, HttpServer,
 };
-use anyhow::{Context as _, Result};
+use anyhow::{Context as _, Result, ensure};
 use chrono::DateTime;
 use futures::TryStreamExt;
 use log::{debug, error};
@@ -48,7 +48,6 @@ pub fn init() -> TauriPlugin<Wry> {
         .build()
 }
 
-#[derive(Clone)]
 pub struct BrowserPlugin {
     app: AppHandle,
 }
@@ -60,8 +59,8 @@ impl BrowserPlugin {
         }
     }
 
-    async fn maybe_insert_info(&self, info: &TabInfo) -> Result<Option<i64>> {
-        if self.check_debounce(info).await? {
+    async fn maybe_insert_info(&self, info: TabInfo) -> Result<Option<i64>> {
+        if self.check_debounce(&info).await? {
             debug!("browsers: debounced!");
             return Ok(None);
         }
@@ -69,8 +68,8 @@ impl BrowserPlugin {
         Ok(Some(id))
     }
 
-    async fn insert_info(&self, info: &TabInfo) -> Result<i64> {
-        assert!(info.url.is_some(), "url is required");
+    async fn insert_info(&self, info: TabInfo) -> Result<i64> {
+        ensure!(info.url.is_some(), "url is required");
 
         let db = self.app.state::<ImmicDb>();
         let pool = db.pool().await.context("db pool is not set")?;
@@ -80,19 +79,19 @@ impl BrowserPlugin {
             id: 0,  // dummy
             timestamp: timestamp.timestamp(),
             date: "".to_string(),  // dummy
-            url: info.url.as_ref().unwrap().clone(),
-            title: info.title.as_ref().map(|s| s.clone()),
-            fav_icon_url: info.favIconUrl.as_ref().map(|s| s.clone()),
-            referrer: info.referrer.as_ref().map(|s| s.clone()),
+            url: info.url.unwrap(),  // checked in the above
+            title: info.title,
+            fav_icon_url: info.favIconUrl,
+            referrer: info.referrer,
             tab_id: info.tabId,
             opener_tab_id: info.openerTabId,
             window_id: info.windowId,
         };
 
-        self.insert_browser_log_with(&pool, &browser_log).await
+        self.insert_browser_log_with(&pool, browser_log).await
     }
 
-    pub async fn insert_browser_log_with(&self, pool: &Pool<Sqlite>, log: &BrowserLog) -> Result<i64> {
+    pub async fn insert_browser_log_with(&self, pool: &Pool<Sqlite>, log: BrowserLog) -> Result<i64> {
         let timestamp = DateTime::from_timestamp(log.timestamp, 0).context("Invalid timestamp")?;
 
         let db = self.app.state::<ImmicDb>();
@@ -140,7 +139,6 @@ impl BrowserPlugin {
                 result.last_insert_rowid()
             }
         };
-        // debug!("origin_id: {:?}", origin_id);
 
         // browser_url
         let result = sqlx::query_as::<_, (i64,)>(
@@ -181,7 +179,6 @@ impl BrowserPlugin {
                 result.last_insert_rowid()
             }
         };
-        // debug!("url_id: {:?}", url_id);
 
         let referrer_id = match &log.referrer {
             Some(referrer) => {
@@ -275,13 +272,12 @@ impl BrowserPlugin {
     }
 
     async fn check_debounce(&self, info: &TabInfo) -> Result<bool> {
-        let timestamp = DateTime::from_timestamp_millis(info.timestampMs).expect("Invalid timestamp");
+        ensure!(info.url.is_some(), "url is required");
+
+        let timestamp = DateTime::from_timestamp_millis(info.timestampMs).context("Invalid timestamp")?;
         let timestamp = timestamp.timestamp();
 
-        if info.url.is_none() {
-            return Ok(false);
-        }
-        let url = info.url.as_ref().unwrap();
+        let url = info.url.as_ref().unwrap();  // checked in the above
         let (_origin, url, _query) = parse_url(url)?;
 
         let db = self.app.state::<db::ImmicDb>();
@@ -299,17 +295,19 @@ impl BrowserPlugin {
         .await;
 
         if let Ok((last_update,)) = result {
-            debug!("last_update: {:?}", last_update);
+            // debug!("last_update: {:?}", last_update);
 
-            if last_update.is_none() {
-                return Ok(false);
-            }
-
-            let last_update = last_update.unwrap();
-            if timestamp - last_update < DEBOUNCE_THRESHOLD {
-                // faviconの更新があるケースがあるのをどうするか。
-                // faviconの更新だけここで行うか？
-                return Ok(true);
+            match last_update {
+                Some(last_update) => {
+                    if timestamp - last_update < DEBOUNCE_THRESHOLD {
+                        // faviconの更新があるケースがあるのをどうするか。
+                        // faviconの更新だけここで行うか？
+                        return Ok(true);
+                    }
+                },
+                None => {
+                    return Ok(false);
+                }
             }
         }
 
@@ -432,7 +430,7 @@ pub async fn browserlog(tab_info: web::Json<TabInfo>, data: web::Data<AppHandle>
 
     let browser_plugin = data.get_ref().state::<BrowserPlugin>();
 
-    if let Err(e) = browser_plugin.maybe_insert_info(&tab_info).await {
+    if let Err(e) = browser_plugin.maybe_insert_info(tab_info.into_inner()).await {
         error!("Error on insert: {:?}", e);
         return Err(actix_web::error::ErrorInternalServerError(e));
     }

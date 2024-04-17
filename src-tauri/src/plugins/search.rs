@@ -28,7 +28,6 @@ pub fn init() -> TauriPlugin<Wry> {
         .build()
 }
 
-#[derive(Clone)]
 pub struct SearchPlugin {
     app: AppHandle,
 }
