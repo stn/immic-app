@@ -1,4 +1,4 @@
-use anyhow::{Context as _, Result};
+use anyhow::{anyhow, Context as _, Result};
 use chrono::{DateTime, Utc};
 use futures::TryStreamExt;
 use log::{debug, error, info};
@@ -15,8 +15,11 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::HashSet,
     fmt,
-    path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    path::PathBuf,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::Duration,
 };
 use sqlx::{
@@ -82,14 +85,14 @@ pub fn init() -> TauriPlugin<Wry> {
 #[derive(Clone)]
 pub struct FilelogPlugin {
     app: AppHandle,
-    running: Arc<Mutex<bool>>,
+    running: Arc<AtomicBool>,
 }
 
 impl FilelogPlugin {
     pub fn new(app: AppHandle) -> Self {
         Self {
             app,
-            running: Arc::new(Mutex::new(false)),
+            running: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -106,30 +109,32 @@ impl FilelogPlugin {
             return Ok(());
         }
 
-        *self.running.lock().unwrap() = true;
+        self.running.store(true, Ordering::Relaxed);
 
-        let self_clone = self.clone();
-        tokio::spawn(async move {
-            for path in watch_pathset.iter() {
-                if !path.exists() {
-                    error!("watch path not found: {:?}", path);
-                    continue;
-                }
-                self_clone.async_watch(path).await.unwrap();
+        for path in watch_pathset {
+            if !path.exists() {
+                error!("watch path not found: {:?}", path);
+                continue;
             }
-        });
+            let self_clone = self.clone();
+            tokio::spawn(async move {
+                if let Err(e) = self_clone.async_watch(path).await {
+                    error!("Error on async_watch: {:?}", e);
+                }
+            });
+        }
 
         Ok(())
     }
 
-    async fn async_watch(&self, path: &Path) -> Result<()> {
+    async fn async_watch(&self, path: PathBuf) -> Result<()> {
         let (mut debouncer, mut rx) = self.async_watcher()?;
 
-        debouncer.watcher().watch(path, RecursiveMode::Recursive)?;
+        debouncer.watcher().watch(&path, RecursiveMode::Recursive)?;
 
         while let Some(infos) = rx.recv().await {
             // Check if the watcher has been stopped
-            if !*self.running.lock().unwrap() {
+            if !self.running.load(Ordering::Relaxed) {
                 // 実際には、上のrecvがブロックされているので、ここには来ない。
                 // watcherをdropする必要がある。
                 break;
@@ -137,8 +142,8 @@ impl FilelogPlugin {
 
             for mut info in infos {
                 debug!("file event info: {:?}", info);
-                info.watch_dir = Some(path.to_path_buf());
-                if let Err(e) = self.maybe_insert_info(&info).await {
+                info.watch_dir = Some(path.clone());
+                if let Err(e) = self.maybe_insert_info(info).await {
                     error!("Error on maybe_insert_info: {:?}", e);
                 }
             }
@@ -154,9 +159,9 @@ impl FilelogPlugin {
         let debouncer = new_debouncer(Duration::from_secs(2), None, move |result: DebounceEventResult| {
             match result {
                 Ok(debounce_events) => {
-                    let infos = debounce_events.iter()
+                    let infos = debounce_events.into_iter()
                         .map(|de| {
-                            let info = FileEventInfo::from(&de.event);
+                            let info = FileEventInfo::from(de.event);
                             if check_ignore(&info) {
                                 debug!("ignore: {:?}", info);
                                 None
@@ -170,7 +175,7 @@ impl FilelogPlugin {
                     tx.blocking_send(infos).unwrap();
                 },
                 Err(errors) => {
-                    errors.iter().for_each(|e| {
+                    errors.into_iter().for_each(|e| {
                         error!("watch error: {:?}", e);
                     });
                 },
@@ -208,16 +213,16 @@ impl FilelogPlugin {
             .map(|s| s.split('|').map(PathBuf::from).collect());
         debug!("watch_pathset: {:?}", watch_pathset);
 
-        Ok(watch_pathset.unwrap())
+        Ok(watch_pathset.unwrap_or(Vec::new()))
     }
 
     pub fn stop(&self) {
         debug!("filelog stop");
-        *self.running.lock().unwrap() = false;
+        self.running.store(false, Ordering::Relaxed);
     }
 
-    async fn maybe_insert_info(&self, info: &FileEventInfo) -> Result<Option<i64>> {
-        if self.check_debounce(info).await? {
+    async fn maybe_insert_info(&self, info: FileEventInfo) -> Result<Option<i64>> {
+        if self.check_debounce(&info).await? {
             debug!("filelog: debounced!");
             return Ok(None);
         }
@@ -225,11 +230,11 @@ impl FilelogPlugin {
         Ok(Some(id))
     }
 
-    async fn insert_info(&self, info: &FileEventInfo) -> Result<i64> {
+    async fn insert_info(&self, info: FileEventInfo) -> Result<i64> {
         let timestamp = Utc::now();
 
         let db = self.app.state::<db::ImmicDb>();
-        let pool = db.pool().await.expect("db pool is not set");
+        let pool = db.pool().await?;
 
         let file_log = FileLog {
             id: 0,  // dummy
@@ -237,13 +242,13 @@ impl FilelogPlugin {
             date: "".to_string(),  // dummy
             path: info.path.to_string_lossy().to_string(),
             kind: Some(info.kind.to_string()),
-            watch_dir: info.watch_dir.as_ref().map(|p| p.to_string_lossy().to_string()),
+            watch_dir: info.watch_dir.map(|p| p.to_string_lossy().to_string()),
         };
 
-        self.insert_file_log_with(&pool, &file_log).await
+        self.insert_file_log_with(&pool, file_log).await
     }
 
-    pub async fn insert_file_log_with(&self, pool: &Pool<Sqlite>, log: &FileLog) -> Result<i64> {
+    pub async fn insert_file_log_with(&self, pool: &Pool<Sqlite>, log: FileLog) -> Result<i64> {
         let timestamp = DateTime::from_timestamp(log.timestamp, 0).context("Invalid timestamp")?;
 
         let db = self.app.state::<db::ImmicDb>();
@@ -276,7 +281,7 @@ impl FilelogPlugin {
                 .await?;
                 id
             },
-            Err(_) => {
+            Err(sqlx::Error::RowNotFound) => {
                 let result = sqlx::query(
                     r#"
                     INSERT INTO file_info (path, last_update)
@@ -288,6 +293,9 @@ impl FilelogPlugin {
                 .execute(pool)
                 .await?;
                 result.last_insert_rowid()
+            },
+            Err(e) => {
+                return Err(anyhow!("select from file_info error: {:?}", e));
             }
         };
 
@@ -307,7 +315,7 @@ impl FilelogPlugin {
 
                 match result {
                     Ok((id,)) => Some(id),
-                    Err(_) => {
+                    Err(sqlx::Error::RowNotFound) => {
                         let result = sqlx::query(
                             r#"
                             INSERT INTO watch_dir (dir)
@@ -318,6 +326,9 @@ impl FilelogPlugin {
                         .execute(pool)
                         .await?;
                         Some(result.last_insert_rowid())
+                    },
+                    Err(e) => {
+                        return Err(anyhow!("select from watch_dir error: {:?}", e));
                     }
                 }
             },
@@ -346,7 +357,7 @@ impl FilelogPlugin {
         let timestamp = Utc::now().timestamp();
 
         let db = self.app.state::<db::ImmicDb>();
-        let pool = db.pool().await.context("db pool is not set")?;
+        let pool = db.pool().await?;
 
         let result = sqlx::query_as::<_, (Option<i64>,)>(
             r#"
@@ -359,12 +370,7 @@ impl FilelogPlugin {
         .fetch_one(&pool)
         .await;
 
-        if let Ok((last_update,)) = result {
-            if last_update.is_none() {
-                return Ok(false);
-            }
-
-            let last_update = last_update.unwrap();
+        if let Ok((Some(last_update),)) = result {
             if timestamp - last_update < DEBOUNCE_THRESHOLD {
                 return Ok(true);
             }
@@ -375,7 +381,7 @@ impl FilelogPlugin {
 
     pub async fn list_file_logs_on(&self, date: &str) -> Result<Vec<FileLog>> {
         let db = self.app.state::<db::ImmicDb>();
-        let pool = db.pool().await.context("db pool is not set")?;
+        let pool = db.pool().await?;
 
         let mut rows = sqlx::query_as::<_, (
             i64,
@@ -479,8 +485,8 @@ impl fmt::Display for FileKind {
     }
 }
 
-impl From<&Event> for FileEventInfo {
-    fn from(event: &Event) -> Self {
+impl From<Event> for FileEventInfo {
+    fn from(event: Event) -> Self {
         let kind = match event.kind {
             EventKind::Create(_) => FileKind::Create,
             EventKind::Modify(_) => FileKind::Modify,
@@ -489,7 +495,7 @@ impl From<&Event> for FileEventInfo {
         };
 
         // Rename event has two paths, but we only check the first one for now.
-        let path = event.paths.iter().next().unwrap().clone();
+        let path = event.paths.into_iter().next().unwrap();
 
         Self {
             kind,

@@ -292,7 +292,7 @@ impl ImmicDb {
                     browser.insert_browser_log_with(&pool, log).await?;
                 },
                 AnyLog::FileLogEntry(log) => {
-                    filelog.insert_file_log_with(&pool, &log).await?;
+                    filelog.insert_file_log_with(&pool, log).await?;
                 },
                 AnyLog::ScreenshotLogEntry(log) => {
                     screenshot.insert_screenshot_log_with(&pool, &log).await?;
