@@ -1,14 +1,17 @@
 use active_win_pos_rs::get_active_window;
-use anyhow::{Context as _, Result};
+use anyhow::{Context as _, Result, ensure};
 use chrono::{DateTime, Utc};
 use futures::TryStreamExt;
-use log::debug;
+use log::{error,debug};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashSet,
     path::MAIN_SEPARATOR,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
 };
 use sqlx::{
     Pool,
@@ -55,14 +58,14 @@ pub fn init() -> TauriPlugin<Wry> {
 #[derive(Clone)]
 pub struct ApplicationPlugin {
     app: AppHandle,
-    running: Arc<Mutex<bool>>,
+    running: Arc<AtomicBool>,
 }
 
 impl ApplicationPlugin {
     fn new(app: AppHandle) -> Self {
         Self {
             app,
-            running: Arc::new(Mutex::new(false)),
+            running: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -71,23 +74,24 @@ impl ApplicationPlugin {
 
         // Check pool
         let db = self.app.state::<db::ImmicDb>();
-        db.pool().await.unwrap();
+        db.pool().await.context("db pool is not set")?;
 
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
 
-        *self.running.lock().unwrap() = true;
-        // let running = Arc::clone(&self.running);
-        // let app = self;
+        self.running.store(true, Ordering::Relaxed);
         let self_clone = self.clone();
         tokio::spawn(async move {
             let mut last_win_info = None;
             let mut last_id = -1;
             let mut last_info_id = -1;
             loop {
-                if !*self_clone.running.lock().unwrap() {
+                interval.tick().await;
+
+                // TODO: Maybe we can use Abortable
+                // https://docs.rs/futures/0.3.30/futures/future/fn.abortable.html
+                if !self_clone.running.load(Ordering::Relaxed) {
                     break;
                 }
-                interval.tick().await;
 
                 let win_info = check_application().await;
 
@@ -95,7 +99,7 @@ impl ApplicationPlugin {
                 if win_info == last_win_info {
                     debug!("check_application: same as last info");
                     if let Err(e) = self_clone.insert_win_info_ref(last_id, last_info_id).await {
-                        debug!("check_application: Error on inserting ref: {:?}", e);
+                        error!("check_application: Error on inserting ref: {:?}", e);
                     }
                     continue;
                 }
@@ -103,22 +107,26 @@ impl ApplicationPlugin {
                 if let Some(win_info) = win_info {
                     debug!("check_application: {:?}", win_info);
 
-                    let app_last_path = win_info.path.as_str().split(MAIN_SEPARATOR).last().unwrap();
-                    // debug!("check_application: app_last_path={}", app_last_path);
+                    let app_last_path = win_info.path.as_str().split(MAIN_SEPARATOR).last();
+                    if app_last_path.is_none() {
+                        error!("check_application: invalid path: {}", win_info.path);
+                        continue;
+                    }
+                    let app_last_path = app_last_path.unwrap();
                     if IGNORE_APPS.contains(app_last_path) {
                         debug!("check_application: ignore app: {}", win_info.name);
                         continue;
                     }
 
-                    let ids = self_clone.insert_win_info(&win_info).await;
+                    let ids = self_clone.insert_win_info(win_info.clone()).await;
                     match ids {
                         Ok((id, info_id)) => {
-                            last_win_info = Some(win_info);
+                            last_win_info.replace(win_info);
                             last_id = id;
                             last_info_id = info_id;
                         },
                         Err(e) => {
-                            debug!("check_application: Error on inserting application_info: {:?}", e);
+                            error!("check_application: Error on inserting application_info: {:?}", e);
                         },
                     }
                 }
@@ -129,23 +137,23 @@ impl ApplicationPlugin {
     }
 
     pub fn stop(&self) {
-        *self.running.lock().unwrap() = false;
+        self.running.store(false, Ordering::Relaxed);
     }
 
-    async fn insert_win_info(&self, win_info: &WinInfo) -> Result<(i64, i64)> {
+    async fn insert_win_info(&self, win_info: WinInfo) -> Result<(i64, i64)> {
         let timestamp = Utc::now();
 
         let db = self.app.state::<db::ImmicDb>();
-        let pool = db.pool().await.unwrap();
+        let pool = db.pool().await?;
 
         let application_log = ApplicationLog {
             id: 0,  // dummy
             timestamp: timestamp.timestamp(),
             date: "".to_string(), // dummy
-            path: win_info.path.clone(),
-            name: Some(win_info.name.clone()),
+            path: win_info.path,
+            name: Some(win_info.name),
             process_id: Some(win_info.process_id),
-            title: Some(win_info.title.clone()),
+            title: Some(win_info.title),
             x: Some(win_info.x),
             y: Some(win_info.y),
             width: Some(win_info.width),
@@ -153,7 +161,7 @@ impl ApplicationPlugin {
             ref_id: None,
         };
 
-        self.insert_application_log_with(&pool, &application_log).await
+        self.insert_application_log_with(&pool, application_log).await
     }
 
     async fn insert_win_info_ref(&self, ref_id: i64, info_id: i64) -> Result<i64> {
@@ -163,7 +171,7 @@ impl ApplicationPlugin {
         let db = self.app.state::<db::ImmicDb>();
         let event_id = db.insert_eventlog(&timestamp, KIND).await?;
 
-        let pool = db.pool().await.unwrap();
+        let pool = db.pool().await?;
         let result = sqlx::query(
             r#"
             INSERT INTO application_log (event_id, info_id, ref_id)
@@ -180,8 +188,8 @@ impl ApplicationPlugin {
         Ok(log_id)
     }
 
-    pub async fn insert_application_log_with(&self, pool: &Pool<Sqlite>, log: &ApplicationLog) -> Result<(i64, i64)> {
-        assert!(log.ref_id.is_none(), "ref_id must be None");
+    pub async fn insert_application_log_with(&self, pool: &Pool<Sqlite>, log: ApplicationLog) -> Result<(i64, i64)> {
+        ensure!(log.ref_id.is_none(), "ref_id must be None");
 
         let timestamp = DateTime::from_timestamp(log.timestamp, 0).context("Invalid timestamp")?;
 
@@ -240,13 +248,13 @@ impl ApplicationPlugin {
         Ok((log_id, info_id))
     }
 
-    pub async fn insert_application_log_ref_with(&self, pool: &Pool<Sqlite>, log: &ApplicationLog, last_ids: &Option<(i64, i64)>) -> Result<i64> {
-        assert!(log.ref_id.is_some(), "ref_id must be Some");
-        assert!(last_ids.is_some(), "last_ids must be Some");
+    pub async fn insert_application_log_ref_with(&self, pool: &Pool<Sqlite>, log: ApplicationLog, last_ids: &Option<(i64, i64)>) -> Result<i64> {
+        ensure!(log.ref_id.is_some(), "ref_id must be Some");
+        ensure!(last_ids.is_some(), "last_ids must be Some");
 
         let (ref_id, info_id) = last_ids.unwrap();
 
-        let timestamp = DateTime::from_timestamp(log.timestamp, 0).expect("Invalid timestamp");
+        let timestamp = DateTime::from_timestamp(log.timestamp, 0).context("Invalid timestamp")?;
 
         // Insert event_log
         let db = self.app.state::<db::ImmicDb>();
@@ -270,7 +278,7 @@ impl ApplicationPlugin {
 
     pub async fn list_application_logs_on(&self, date: &str) -> Result<Vec<ApplicationLog>> {
         let db = self.app.state::<db::ImmicDb>();
-        let pool = db.pool().await.context("db pool is not set")?;
+        let pool = db.pool().await?;
 
         let mut rows = sqlx::query_as::<_, (
             i64,
@@ -357,7 +365,7 @@ impl ApplicationPlugin {
     // }
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Clone,Debug,PartialEq)]
 struct WinInfo {
     process_id: i64,
     path: String,
