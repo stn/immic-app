@@ -17,7 +17,7 @@ use crate::plugins::{
 async fn cleanup(app: &AppHandle) {
     // Filelog
     let filelog = app.state::<FilelogPlugin>();
-    filelog.stop();
+    filelog.stop().await;
 
     // Screenshot
     let screenshot = app.state::<ScreenshotPlugin>();

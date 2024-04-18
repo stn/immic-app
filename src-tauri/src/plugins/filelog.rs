@@ -16,10 +16,7 @@ use std::{
     collections::HashSet,
     fmt,
     path::PathBuf,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, Mutex},
     time::Duration,
 };
 use sqlx::{
@@ -30,7 +27,11 @@ use tauri::{
     plugin::{self, TauriPlugin},
     AppHandle, Manager, State, Wry,
 };
-use tokio::sync::mpsc;
+use tokio::{
+    sync::mpsc,
+    task::JoinHandle,
+};
+use tokio_util::sync::CancellationToken;
 
 use crate::plugins::{
     db,
@@ -85,23 +86,25 @@ pub fn init() -> TauriPlugin<Wry> {
 #[derive(Clone)]
 pub struct FilelogPlugin {
     app: AppHandle,
-    running: Arc<AtomicBool>,
+    task_handles: Arc<Mutex<Option<Vec<JoinHandle<()>>>>>,
+    cancel_token: Arc<Mutex<Option<CancellationToken>>>,
 }
 
 impl FilelogPlugin {
     pub fn new(app: AppHandle) -> Self {
         Self {
             app,
-            running: Arc::new(AtomicBool::new(false)),
+            task_handles: Arc::new(Mutex::new(None)),
+            cancel_token: Arc::new(Mutex::new(None)),
         }
     }
 
     pub fn start(&self) -> Result<()> {
-        info!("starting filelog");
+        info!("FilelogPlugin start");
         
-        // Check if setting and db are ready
-        let _setting = self.app.state::<SettingPlugin>();
-        let _db = self.app.state::<db::ImmicDb>();
+        // // Check if setting and db are ready
+        // let _setting = self.app.state::<SettingPlugin>();
+        // let _db = self.app.state::<db::ImmicDb>();
 
         let watch_pathset = self.watch_pathset()?;
         if watch_pathset.is_empty() {
@@ -109,20 +112,29 @@ impl FilelogPlugin {
             return Ok(());
         }
 
-        self.running.store(true, Ordering::Relaxed);
+        let cancel_token = CancellationToken::new();
+        self.cancel_token.lock().unwrap().replace(cancel_token.clone());
 
+        let mut task_handles = Vec::new();
         for path in watch_pathset {
             if !path.exists() {
                 error!("watch path not found: {:?}", path);
                 continue;
             }
             let self_clone = self.clone();
-            tokio::spawn(async move {
-                if let Err(e) = self_clone.async_watch(path).await {
-                    error!("Error on async_watch: {:?}", e);
+            let token_clone = cancel_token.clone();
+            task_handles.push(tokio::spawn(async move {
+                tokio::select! {
+                    _ = async move {
+                        self_clone.async_watch(path).await.unwrap_or_else(|e| {
+                            error!("Error on async_watch: {:?}", e);
+                        });
+                    } => {},
+                    _ = token_clone.cancelled() => {}
                 }
-            });
+            }));
         }
+        self.task_handles.lock().unwrap().replace(task_handles);
 
         Ok(())
     }
@@ -133,13 +145,6 @@ impl FilelogPlugin {
         debouncer.watcher().watch(&path, RecursiveMode::Recursive)?;
 
         while let Some(infos) = rx.recv().await {
-            // Check if the watcher has been stopped
-            if !self.running.load(Ordering::Relaxed) {
-                // 実際には、上のrecvがブロックされているので、ここには来ない。
-                // watcherをdropする必要がある。
-                break;
-            }
-
             for mut info in infos {
                 debug!("file event info: {:?}", info);
                 info.watch_dir = Some(path.clone());
@@ -216,9 +221,20 @@ impl FilelogPlugin {
         Ok(watch_pathset.unwrap_or(Vec::new()))
     }
 
-    pub fn stop(&self) {
-        debug!("filelog stop");
-        self.running.store(false, Ordering::Relaxed);
+    pub async fn stop(&self) {
+        let cancel_token = self.cancel_token.lock().unwrap().take();
+        cancel_token.map(|t| t.cancel());
+
+        let task_handles = self.task_handles.lock().unwrap().take();
+        if let Some(task_handles) = task_handles {
+            for handle in task_handles.into_iter() {
+                handle.await.unwrap_or_else(|e| {
+                    error!("Error on stopping filelog task: {:?}", e);
+                });
+            }
+        }
+
+        debug!("FilelogPlugin stopped");
     }
 
     async fn maybe_insert_info(&self, info: FileEventInfo) -> Result<Option<i64>> {
