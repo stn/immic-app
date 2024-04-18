@@ -25,7 +25,7 @@ async fn cleanup(app: &AppHandle) {
 
     // Application
     let application = app.state::<ApplicationPlugin>();
-    application.stop();
+    application.stop().await;
 
     // DB
     // let db = app.state::<ImmicDb>();

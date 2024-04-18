@@ -8,10 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::HashSet,
     path::MAIN_SEPARATOR,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
+    sync::{Arc, Mutex},
 };
 use sqlx::{
     Pool,
@@ -21,6 +18,8 @@ use tauri::{
     plugin::{self, TauriPlugin},
     AppHandle, Manager, State, Wry,
 };
+use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 
 use crate::plugins::db;
 
@@ -58,86 +57,96 @@ pub fn init() -> TauriPlugin<Wry> {
 #[derive(Clone)]
 pub struct ApplicationPlugin {
     app: AppHandle,
-    running: Arc<AtomicBool>,
+    task_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
+    cancel_token: Arc<Mutex<Option<CancellationToken>>>,
 }
 
 impl ApplicationPlugin {
     fn new(app: AppHandle) -> Self {
         Self {
             app,
-            running: Arc::new(AtomicBool::new(false)),
+            task_handle: Arc::new(Mutex::new(None)),
+            cancel_token: Arc::new(Mutex::new(None)),
         }
     }
 
-    pub async fn start(&self) -> Result<()> {
+    pub fn start(&self) -> Result<()> {
         debug!("ApplicationPlugin start");
 
-        // Check pool
-        let db = self.app.state::<db::ImmicDb>();
-        db.pool().await.context("db pool is not set")?;
+        let cancel_token = CancellationToken::new();
+        self.cancel_token.lock().unwrap().replace(cancel_token.clone());
 
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
-
-        self.running.store(true, Ordering::Relaxed);
         let self_clone = self.clone();
-        tokio::spawn(async move {
+        let task_handle = tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
             let mut last_win_info = None;
             let mut last_id = -1;
             let mut last_info_id = -1;
-            loop {
-                interval.tick().await;
 
-                // TODO: Maybe we can use Abortable
-                // https://docs.rs/futures/0.3.30/futures/future/fn.abortable.html
-                if !self_clone.running.load(Ordering::Relaxed) {
-                    break;
-                }
+            tokio::select! {
+                _ = async move {
+                    loop {
+                        interval.tick().await;
 
-                let win_info = check_application().await;
+                        let win_info = check_application().await;
 
-                // check if the last info is the same as the current info
-                if win_info == last_win_info {
-                    debug!("check_application: same as last info");
-                    if let Err(e) = self_clone.insert_win_info_ref(last_id, last_info_id).await {
-                        error!("check_application: Error on inserting ref: {:?}", e);
+                        // check if the last info is the same as the current info
+                        if win_info == last_win_info {
+                            debug!("check_application: same as last info");
+                            if let Err(e) = self_clone.insert_win_info_ref(last_id, last_info_id).await {
+                                error!("check_application: Error on inserting ref: {:?}", e);
+                            }
+                            continue;
+                        }
+
+                        if let Some(win_info) = win_info {
+                            debug!("check_application: {:?}", win_info);
+
+                            let app_last_path = win_info.path.as_str().split(MAIN_SEPARATOR).last();
+                            if app_last_path.is_none() {
+                                error!("check_application: invalid path: {}", win_info.path);
+                                continue;
+                            }
+                            let app_last_path = app_last_path.unwrap();
+                            if IGNORE_APPS.contains(app_last_path) {
+                                debug!("check_application: ignore app: {}", win_info.name);
+                                continue;
+                            }
+
+                            let ids = self_clone.insert_win_info(win_info.clone()).await;
+                            match ids {
+                                Ok((id, info_id)) => {
+                                    last_win_info.replace(win_info);
+                                    last_id = id;
+                                    last_info_id = info_id;
+                                },
+                                Err(e) => {
+                                    error!("check_application: Error on inserting application_info: {:?}", e);
+                                },
+                            }
+                        }
                     }
-                    continue;
-                }
-
-                if let Some(win_info) = win_info {
-                    debug!("check_application: {:?}", win_info);
-
-                    let app_last_path = win_info.path.as_str().split(MAIN_SEPARATOR).last();
-                    if app_last_path.is_none() {
-                        error!("check_application: invalid path: {}", win_info.path);
-                        continue;
-                    }
-                    let app_last_path = app_last_path.unwrap();
-                    if IGNORE_APPS.contains(app_last_path) {
-                        debug!("check_application: ignore app: {}", win_info.name);
-                        continue;
-                    }
-
-                    let ids = self_clone.insert_win_info(win_info.clone()).await;
-                    match ids {
-                        Ok((id, info_id)) => {
-                            last_win_info.replace(win_info);
-                            last_id = id;
-                            last_info_id = info_id;
-                        },
-                        Err(e) => {
-                            error!("check_application: Error on inserting application_info: {:?}", e);
-                        },
-                    }
-                }
+                } => {},
+                _ = cancel_token.cancelled() => {}
             }
         });
+        self.task_handle.lock().unwrap().replace(task_handle);
 
         Ok(())
     }
 
-    pub fn stop(&self) {
-        self.running.store(false, Ordering::Relaxed);
+    pub async fn stop(&self) {
+        let cancel_token = self.cancel_token.lock().unwrap().take();
+        cancel_token.map(|t| t.cancel());
+
+        let task_handle = self.task_handle.lock().unwrap().take();
+        if let Some(handle) = task_handle {
+            handle.await.unwrap_or_else(|e| {
+                error!("Error on stopping application task: {:?}", e);
+            });
+        }
+
+        debug!("ApplicationPlugin stopped");
     }
 
     async fn insert_win_info(&self, win_info: WinInfo) -> Result<(i64, i64)> {

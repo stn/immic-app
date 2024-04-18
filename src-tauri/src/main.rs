@@ -73,7 +73,7 @@ async fn main() {
 
                 // Application plugin
                 let application = app.state::<plugins::application::ApplicationPlugin>();
-                application.start().await.unwrap_or_else(|e| {
+                application.start().unwrap_or_else(|e| {
                     error!("Application start error: {}", e);
                 });
 

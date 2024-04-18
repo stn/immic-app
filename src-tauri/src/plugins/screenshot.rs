@@ -85,14 +85,16 @@ impl ScreenshotPlugin {
 
         let self_clone = self.clone();
         let task_handle = tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+
             tokio::select! {
-                _ = async {
-                    let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+                _ = async move {
                     loop {
+                        interval.tick().await;
+
                         self_clone.take_screenshot().await.unwrap_or_else(|e| {
                             error!("Error on taking screenshot: {:?}", e);
                         });
-                        interval.tick().await;
                     }
                 } => {},
                 _ = cancel_token.cancelled() => {}
