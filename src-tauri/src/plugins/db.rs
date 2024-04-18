@@ -5,7 +5,7 @@ use log::debug;
 use serde::{Deserialize, Serialize};
 use std::{
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::RwLock,
 };
 use sqlx::{
     Pool, Sqlite,
@@ -17,7 +17,7 @@ use sqlx::{
     },
 };
 use tauri::{
-    AppHandle, Manager, RunEvent, State, Wry,
+    AppHandle, Manager, State, Wry,
     plugin::TauriPlugin,
 };
 use tokio::{
@@ -58,45 +58,30 @@ pub fn init() -> TauriPlugin<Wry> {
 
             Ok(())
         })
-        .on_event(|app, event| {
-            match event {
-                RunEvent::Exit => {
-                    debug!("RunEvent::Exit");
-                    let db = app.state::<ImmicDb>();
-                    let pool = db.pool.lock().unwrap().clone();
-                    if let Some(pool) = pool {
-                        tokio::spawn(async move {
-                            pool.close().await;
-                        });
-                    }
-                },
-                _ => (),
-            }
-        })
         .build()
 }
 
 pub struct ImmicDb {
     app: AppHandle,
-    pool: Mutex<Option<Pool<Sqlite>>>,
+    pool: RwLock<Option<Pool<Sqlite>>>,
 }
 
 impl ImmicDb {
     fn new(app: AppHandle) -> Self {
         Self {
             app,
-            pool: Mutex::new(None),
+            pool: RwLock::new(None),
         }
     }
 
     pub async fn pool(&self) -> Result<Pool<Sqlite>> {
-        self.pool.lock().unwrap().clone().context("pool is none")
+        self.pool.read().unwrap().clone().context("pool is none")
     }
 
     pub fn start(&self) -> Result<()> {
         debug!("start immicdb");
 
-        if self.pool.lock().unwrap().is_some() {
+        if self.pool.read().unwrap().is_some() {
             return Ok(());
         }
 
@@ -107,7 +92,7 @@ impl ImmicDb {
             .journal_mode(SqliteJournalMode::Wal)
             .synchronous(SqliteSynchronous::Normal);
         let pool = SqlitePoolOptions::new().connect_lazy_with(options);
-        self.pool.lock().unwrap().replace(pool);
+        self.pool.write().unwrap().replace(pool);
 
         Ok(())
     }
@@ -142,14 +127,6 @@ impl ImmicDb {
         sqlx::migrate!("./migrations")
             .run(pool)
             .await?;
-        Ok(())
-    }
-
-    pub async fn stop(&self) -> Result<()> {
-        let pool = self.pool.lock().unwrap().take();
-        if let Some(pool) = pool {
-            pool.close().await;
-        }
         Ok(())
     }
 

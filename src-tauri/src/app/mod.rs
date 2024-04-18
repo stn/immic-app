@@ -7,8 +7,8 @@ use tauri::{
 };
 
 use crate::plugins::{
-    db::ImmicDb,
-    setting::SettingPlugin,
+    // db::ImmicDb,
+    // setting::SettingPlugin,
     screenshot::ScreenshotPlugin,
     application::ApplicationPlugin,
     filelog::FilelogPlugin,
@@ -28,12 +28,12 @@ async fn cleanup(app: &AppHandle) {
     application.stop();
 
     // DB
-    let db = app.state::<ImmicDb>();
-    db.stop().await.ok();
+    // let db = app.state::<ImmicDb>();
+    // db.stop().await.ok();
 
-    // Setting
-    let setting = app.state::<SettingPlugin>();
-    setting.stop();
+    // // Setting
+    // let setting = app.state::<SettingPlugin>();
+    // setting.stop();
 }
 
 #[tauri::command]

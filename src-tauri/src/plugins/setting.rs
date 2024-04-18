@@ -1,8 +1,8 @@
 use anyhow::{Context as _, Result};
-use log::{error, debug};
+use log::debug;
 use std::{
     path::PathBuf,
-    sync::Mutex,
+    sync::RwLock,
 };
 use tauri::{
     AppHandle, Manager, State, Wry,
@@ -21,29 +21,15 @@ pub fn init() -> TauriPlugin<Wry> {
         .setup(|app| {
             debug!("setting plugin setup");
             let setting = SettingPlugin::new(app.clone());
+            setting.start().context("failed to start setting plugin")?;
             app.manage(setting);
             Ok(())
         })
-        // .on_event(|app, event| {
-        //     match event {
-        //         RunEvent::Ready => {
-        //             debug!("setting plugin ready");
-        //             // let setting = app.state::<SettingPlugin>();
-        //             // setting.start();
-        //         },
-        //         RunEvent::Exit => {
-        //             // 明示的にSaveされない限り保存されないでいい。
-        //             // let plugin = app.state::<SettingPlugin>();
-        //             // plugin.stop();
-        //         },
-        //         _ => (),
-        //     }
-        // })
         .build()
 }
 
 pub struct SettingPlugin {
-    store: Mutex<Store<Wry>>,
+    store: RwLock<Store<Wry>>,
 }
 
 impl SettingPlugin {
@@ -51,7 +37,7 @@ impl SettingPlugin {
         let path = path(&app);
         let store = StoreBuilder::new(app, path).build();
         Self {
-            store: Mutex::new(store),
+            store: RwLock::new(store),
         }
     }
 
@@ -62,35 +48,28 @@ impl SettingPlugin {
         Ok(())
     }
 
-    pub fn stop(&self) {
-        debug!("setting plugin stop");
-        self.save().unwrap_or_else(|e| {
-            error!("failed to stop setting plugin: {}", e);
-        })
-    }
-
     pub fn set(&self, key: String, value: JsonValue) -> Result<(), Error> {
-        self.store.lock().unwrap().insert(key, value)
+        self.store.write().unwrap().insert(key, value)
     }
 
     pub fn get(&self, key: &str) -> Result<Option<JsonValue>, Error> {
-        Ok(self.store.lock().unwrap().get(key).cloned())
+        Ok(self.store.read().unwrap().get(key).cloned())
     }
 
     pub fn has(&self, key: &str) -> Result<bool, Error> {
-        Ok(self.store.lock().unwrap().has(key))
+        Ok(self.store.read().unwrap().has(key))
     }
 
     pub fn delete(&self, key: &str) -> Result<bool, Error> {
-        self.store.lock().unwrap().delete(key)
+        self.store.write().unwrap().delete(key)
     }
 
     pub fn load(&self) -> Result<(), Error> {
-        self.store.lock().unwrap().load()
+        self.store.write().unwrap().load()
     }
 
     pub fn save(&self) -> Result<(), Error> {
-        self.store.lock().unwrap().save()
+        self.store.read().unwrap().save()
     }
 }
 

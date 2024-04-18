@@ -11,7 +11,7 @@ use std::{
     fs,
     path::PathBuf,
     sync::{
-        Arc, Mutex,
+        Arc, RwLock,
         atomic::{AtomicBool, Ordering},
     },
 };
@@ -56,7 +56,7 @@ pub fn init() -> TauriPlugin<Wry> {
 #[derive(Clone)]
 pub struct ScreenshotPlugin {
     app: AppHandle,
-    image_dir: Arc<Mutex<Option<PathBuf>>>,
+    image_dir: Arc<RwLock<Option<PathBuf>>>,
     running: Arc<AtomicBool>,
 }
 
@@ -64,7 +64,7 @@ impl ScreenshotPlugin {
     fn new(app: AppHandle) -> Self {
         Self {
             app,
-            image_dir: Arc::new(Mutex::new(None)),
+            image_dir: Arc::new(RwLock::new(None)),
             running: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -74,7 +74,7 @@ impl ScreenshotPlugin {
 
         let image_dir = image_base_dir(&self.app)?;
         debug!("image_dir: {:?}", image_dir);
-        self.image_dir.lock().unwrap().replace(image_dir);
+        self.image_dir.write().unwrap().replace(image_dir);
 
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
         self.running.store(true, Ordering::Relaxed);
@@ -141,7 +141,7 @@ impl ScreenshotPlugin {
     }
 
     async fn save_screenshot(&self, screenshot: &Screenshot) -> Result<()> {
-        let image_dir = self.image_dir.lock().unwrap().clone().unwrap();
+        let image_dir = self.image_dir.read().unwrap().clone().context("image_dir is not set")?;
         let path = image_path(&image_dir, &screenshot.timestamp, screenshot.monitor)?;
         screenshot.image.save(path).context("failed to save screenshot")?;
 
