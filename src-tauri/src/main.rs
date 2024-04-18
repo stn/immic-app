@@ -1,6 +1,7 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use anyhow::Context as _;
 use dotenv::dotenv;
 use tauri::Manager;
 use log::{error,info};
@@ -52,9 +53,9 @@ async fn main() {
 
             let app = app.handle();
 
-            // // // Setting plugin
-            // let setting = app.state::<plugins::setting::SettingPlugin>();
-            // setting.start().expect("Failed to start setting plugin");
+            // // Setting plugin
+            let setting = app.state::<plugins::setting::SettingPlugin>();
+            setting.start().context("Failed to start setting plugin")?;
 
             tokio::spawn(async move {
                 // DB plugin

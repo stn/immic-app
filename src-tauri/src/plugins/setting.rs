@@ -21,7 +21,6 @@ pub fn init() -> TauriPlugin<Wry> {
         .setup(|app| {
             debug!("setting plugin setup");
             let setting = SettingPlugin::new(app.clone());
-            setting.start().context("failed to start setting plugin")?;
             app.manage(setting);
             Ok(())
         })
