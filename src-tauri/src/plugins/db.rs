@@ -115,7 +115,14 @@ impl ImmicDb {
         if data_dir.is_none() {
             return Err(anyhow!("{} is not set or invalid", DATA_DIR_SETTING));
         }
-        let db_path = data_dir.unwrap().join(database_filename);
+        let data_dir = data_dir.unwrap();
+
+        // Create data directories if not exists
+        if !data_dir.exists() {
+            std::fs::create_dir_all(&data_dir)?;
+        }
+
+        let db_path = data_dir.join(database_filename);
         Ok(db_path)
     }
 
