@@ -78,7 +78,7 @@ impl ImmicDb {
         self.pool.read().unwrap().clone().context("pool is none")
     }
 
-    pub fn start(&self) -> Result<()> {
+    pub async fn start(&self) -> Result<()> {
         debug!("start immicdb");
 
         if self.pool.read().unwrap().is_some() {
@@ -92,6 +92,9 @@ impl ImmicDb {
             .journal_mode(SqliteJournalMode::Wal)
             .synchronous(SqliteSynchronous::Normal);
         let pool = SqlitePoolOptions::new().connect_lazy_with(options);
+
+        migrate_with(&pool).await?;
+ 
         self.pool.write().unwrap().replace(pool);
 
         Ok(())
@@ -116,19 +119,12 @@ impl ImmicDb {
         Ok(db_path)
     }
 
-    pub async fn migrate(&self) -> Result<()> {
-        // debug!("migrate immicdb");
-        let pool = self.pool().await?;
-        self.migrate_with(&pool).await?;
-        Ok(())
-    }
-
-    async fn migrate_with(&self, pool: &Pool<Sqlite>) -> Result<()> {
-        sqlx::migrate!("./migrations")
-            .run(pool)
-            .await?;
-        Ok(())
-    }
+    // pub async fn migrate(&self) -> Result<()> {
+    //     debug!("migrate db");
+    //     let pool = self.pool().await?;
+    //     self.migrate_with(&pool).await?;
+    //     Ok(())
+    // }
 
     pub async fn insert_eventlog(&self, datetime: &DateTime<Utc>, kind: &str) -> Result<i64> {
         let pool = self.pool().await?;
@@ -248,7 +244,7 @@ impl ImmicDb {
             .synchronous(SqliteSynchronous::Normal);
         let pool = SqlitePoolOptions::new().connect_with(options).await?;
 
-        self.migrate_with(&pool).await?;
+        migrate_with(&pool).await?;
 
         let mut last_application_log: Option<(i64, i64)> = None;
 
@@ -282,6 +278,14 @@ impl ImmicDb {
 
         Ok(())
     }
+}
+
+
+async fn migrate_with(pool: &Pool<Sqlite>) -> Result<()> {
+    sqlx::migrate!("./migrations")
+        .run(pool)
+        .await?;
+    Ok(())
 }
 
 

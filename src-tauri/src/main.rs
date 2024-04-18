@@ -59,14 +59,10 @@ async fn main() {
             tokio::spawn(async move {
                 // DB plugin
                 let db = app.state::<plugins::db::ImmicDb>();
-                if let Err(e) = db.start() {
+                db.start().await.unwrap_or_else(|e| {
                     error!("DB error: {}", e);
                     return;
-                }
-                if let Err(e) = db.migrate().await {
-                    error!("DB migration error: {}", e);
-                    return;
-                }
+                });
 
                 // Screenshot plugin
                 let screen = app.state::<plugins::screenshot::ScreenshotPlugin>();
