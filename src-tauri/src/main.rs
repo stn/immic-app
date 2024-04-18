@@ -66,9 +66,12 @@ async fn main() {
                 });
 
                 // Screenshot plugin
-                let screen = app.state::<plugins::screenshot::ScreenshotPlugin>();
-                screen.start().unwrap_or_else(|e| {
-                    error!("Screenshot start error: {}", e);
+                let app_screen = app.clone();
+                tokio::spawn(async move {
+                    let screen = app_screen.state::<plugins::screenshot::ScreenshotPlugin>();
+                    screen.run().await.unwrap_or_else(|e| {
+                        error!("Screenshot run error: {}", e);
+                    });
                 });
 
                 // Application plugin
@@ -84,8 +87,9 @@ async fn main() {
                 });
 
                 // Browser plugin
+                let app_browser = app.clone();
                 std::thread::spawn(move || {
-                    plugins::browser::init_server(app).unwrap_or_else(|e| {
+                    plugins::browser::init_server(app_browser).unwrap_or_else(|e| {
                         error!("Browser server error: {}", e);
                     });
                 });

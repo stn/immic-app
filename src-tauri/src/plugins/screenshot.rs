@@ -10,17 +10,18 @@ use std::{
     error::Error,
     fs,
     path::PathBuf,
-    sync::{
-        Arc, RwLock,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Mutex, RwLock},
 };
 use sqlx::{
     Pool,
     sqlite::Sqlite,
 };
 use tauri::{
-    http, plugin::{self, TauriPlugin}, AppHandle, Manager, State, Wry};
+    http,
+    plugin::{self, TauriPlugin},
+    AppHandle, Manager, State, Wry
+};
+use tokio::sync::oneshot;
 use xcap::Monitor;
 
 use crate::plugins::{
@@ -53,49 +54,53 @@ pub fn init() -> TauriPlugin<Wry> {
         .build()
 }
 
-#[derive(Clone)]
 pub struct ScreenshotPlugin {
     app: AppHandle,
-    image_dir: Arc<RwLock<Option<PathBuf>>>,
-    running: Arc<AtomicBool>,
+    image_dir: RwLock<Option<PathBuf>>,
+    tx_stop: Mutex<Option<oneshot::Sender<()>>>,
 }
 
 impl ScreenshotPlugin {
     fn new(app: AppHandle) -> Self {
         Self {
             app,
-            image_dir: Arc::new(RwLock::new(None)),
-            running: Arc::new(AtomicBool::new(false)),
+            image_dir: RwLock::new(None),
+            tx_stop: Mutex::new(None),
         }
     }
 
-    pub fn start(&self) -> Result<()> {
+    pub async fn run(&self) -> Result<()> {
         debug!("ScreenshotPlugin start");
 
         let image_dir = image_base_dir(&self.app)?;
         debug!("image_dir: {:?}", image_dir);
         self.image_dir.write().unwrap().replace(image_dir);
 
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
-        self.running.store(true, Ordering::Relaxed);
-        let self_clone = self.clone();
-        tokio::spawn(async move {
-            loop {
-                interval.tick().await;
-                if !self_clone.running.load(Ordering::Relaxed) {
-                    break;
+        let (tx_stop, rx_stop) = oneshot::channel::<()>();
+        self.tx_stop.lock().unwrap().replace(tx_stop);
+
+        tokio::select! {
+            _ = async {
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+                loop {
+                    self.take_screenshot().await.unwrap_or_else(|e| {
+                        error!("Error on taking screenshot: {:?}", e);
+                    });
+                    interval.tick().await;
                 }
-                self_clone.take_screenshot().await.unwrap_or_else(|e| {
-                    error!("Error on taking screenshot: {:?}", e);
-                });
+            } => {},
+            _ = rx_stop => {
+                debug!("ScreenshotPlugin stop");
             }
-        });
+        }
 
         Ok(())
     }
 
     pub fn stop(&self) {
-        self.running.store(false, Ordering::Relaxed);
+        debug!("ScreenshotPlugin send stop");
+        let tx = self.tx_stop.lock().unwrap().take();
+        tx.map(|tx| tx.send(()).ok());
     }
 
     async fn take_screenshot(&self) -> Result<()> {
