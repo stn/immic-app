@@ -59,6 +59,23 @@ impl BrowserPlugin {
         }
     }
 
+    pub fn start(&self) -> Result<()> {
+        debug!("browser plugin start");
+
+        let app = self.app.clone();
+        std::thread::spawn(move || {
+            init_server(app).unwrap_or_else(|e| {
+                error!("Browser server error: {}", e);
+            });
+        });
+
+        Ok(())
+    }
+
+    pub async fn stop(&self) {
+        debug!("browser plugin stop");
+    }
+
     async fn maybe_insert_info(&self, info: TabInfo) -> Result<Option<i64>> {
         if self.check_debounce(&info).await? {
             debug!("browsers: debounced!");
@@ -484,7 +501,7 @@ pub async fn list_browser_logs_on(browser: State<'_, BrowserPlugin>, date: Strin
 // https://docs.rs/actix-web/4.5.1/actix_web/rt/index.html#running-actix-web-using-tokiomain
 // BroserPlugin::startにできないか？
 #[actix_web::main]
-pub async fn init_server(app: AppHandle) -> std::io::Result<()> {
+async fn init_server(app: AppHandle) -> std::io::Result<()> {
     let server_port = server_port(&app);
 
     let data = web::Data::new(app.clone());

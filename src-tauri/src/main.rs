@@ -84,11 +84,9 @@ async fn main() {
                 });
 
                 // Browser plugin
-                let app_browser = app.clone();
-                std::thread::spawn(move || {
-                    plugins::browser::init_server(app_browser).unwrap_or_else(|e| {
-                        error!("Browser server error: {}", e);
-                    });
+                let browserlog = app.state::<plugins::browser::BrowserPlugin>();
+                browserlog.start().unwrap_or_else(|e| {
+                    error!("Browser start error: {}", e);
                 });
 
                 // Search is not necessary to start
