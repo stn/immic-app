@@ -21,7 +21,7 @@ async fn cleanup(app: &AppHandle) {
 
     // Screenshot
     let screenshot = app.state::<ScreenshotPlugin>();
-    screenshot.stop();
+    screenshot.stop().await;
 
     // Application
     let application = app.state::<ApplicationPlugin>();

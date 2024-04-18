@@ -66,12 +66,9 @@ async fn main() {
                 });
 
                 // Screenshot plugin
-                let app_screen = app.clone();
-                tokio::spawn(async move {
-                    let screen = app_screen.state::<plugins::screenshot::ScreenshotPlugin>();
-                    screen.run().await.unwrap_or_else(|e| {
-                        error!("Screenshot run error: {}", e);
-                    });
+                let screen = app.state::<plugins::screenshot::ScreenshotPlugin>();
+                screen.start().unwrap_or_else(|e| {
+                    error!("Screenshot run error: {}", e);
                 });
 
                 // Application plugin

@@ -10,7 +10,7 @@ use std::{
     error::Error,
     fs,
     path::PathBuf,
-    sync::{Mutex, RwLock},
+    sync::{Arc, Mutex, RwLock},
 };
 use sqlx::{
     Pool,
@@ -21,7 +21,8 @@ use tauri::{
     plugin::{self, TauriPlugin},
     AppHandle, Manager, State, Wry
 };
-use tokio::sync::oneshot;
+use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 use xcap::Monitor;
 
 use crate::plugins::{
@@ -54,57 +55,70 @@ pub fn init() -> TauriPlugin<Wry> {
         .build()
 }
 
+#[derive(Clone)]
 pub struct ScreenshotPlugin {
     app: AppHandle,
-    image_dir: RwLock<Option<PathBuf>>,
-    tx_stop: Mutex<Option<oneshot::Sender<()>>>,
+    image_dir: Arc<RwLock<Option<PathBuf>>>,
+    task_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
+    cancel_token: Arc<Mutex<Option<CancellationToken>>>,
 }
 
 impl ScreenshotPlugin {
     fn new(app: AppHandle) -> Self {
         Self {
             app,
-            image_dir: RwLock::new(None),
-            tx_stop: Mutex::new(None),
+            image_dir: Arc::new(RwLock::new(None)),
+            cancel_token: Arc::new(Mutex::new(None)),
+            task_handle: Arc::new(Mutex::new(None)),
         }
     }
 
-    pub async fn run(&self) -> Result<()> {
+    pub fn start(&self) -> Result<()> {
         debug!("ScreenshotPlugin start");
 
         let image_dir = image_base_dir(&self.app)?;
         debug!("image_dir: {:?}", image_dir);
         self.image_dir.write().unwrap().replace(image_dir);
 
-        let (tx_stop, rx_stop) = oneshot::channel::<()>();
-        self.tx_stop.lock().unwrap().replace(tx_stop);
+        let cancel_token = CancellationToken::new();
+        self.cancel_token.lock().unwrap().replace(cancel_token.clone());
 
-        tokio::select! {
-            _ = async {
-                let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
-                loop {
-                    self.take_screenshot().await.unwrap_or_else(|e| {
-                        error!("Error on taking screenshot: {:?}", e);
-                    });
-                    interval.tick().await;
-                }
-            } => {},
-            _ = rx_stop => {
-                debug!("ScreenshotPlugin stop");
+        let self_clone = self.clone();
+        let task_handle = tokio::spawn(async move {
+            tokio::select! {
+                _ = async {
+                    let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+                    loop {
+                        self_clone.take_screenshot().await.unwrap_or_else(|e| {
+                            error!("Error on taking screenshot: {:?}", e);
+                        });
+                        interval.tick().await;
+                    }
+                } => {},
+                _ = cancel_token.cancelled() => {}
             }
-        }
+        });
+        self.task_handle.lock().unwrap().replace(task_handle);
 
         Ok(())
     }
 
-    pub fn stop(&self) {
-        debug!("ScreenshotPlugin send stop");
-        let tx = self.tx_stop.lock().unwrap().take();
-        tx.map(|tx| tx.send(()).ok());
+    pub async fn stop(&self) {
+        let cancel_token = self.cancel_token.lock().unwrap().take();
+        cancel_token.map(|t| t.cancel());
+
+        let task_handle = self.task_handle.lock().unwrap().take();
+        if let Some(handle) = task_handle {
+            handle.await.unwrap_or_else(|e| {
+                error!("Error on stopping screenshot task: {:?}", e);
+            });
+        }
+
+        debug!("ScreenshotPlugin stopped");
     }
 
     async fn take_screenshot(&self) -> Result<()> {
-        debug!("screenshot");
+        debug!("take screenshot");
         let monitors = Monitor::all()?;
 
         for monitor in monitors {

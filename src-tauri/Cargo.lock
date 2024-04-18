@@ -2474,6 +2474,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-store",
  "tokio",
+ "tokio-util",
  "url",
  "xcap",
 ]
