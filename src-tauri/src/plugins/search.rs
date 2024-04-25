@@ -56,7 +56,7 @@ impl SearchPlugin {
             SELECT
             e.date, COUNT(e.id) AS count
             FROM event_log e
-            INNER JOIN application_log a ON e.log_id = a.id
+            INNER JOIN application_log a ON e.id = a.event_id
             WHERE e.kind = '{0}' AND a.title LIKE '%{1}%'
             GROUP BY e.date
             ORDER BY e.date
@@ -92,7 +92,7 @@ impl SearchPlugin {
             SELECT
             e.date, COUNT(e.id) AS count
             FROM event_log e
-            INNER JOIN application_log a ON e.log_id = a.id
+            INNER JOIN application_log a ON e.id = a.event_id
             INNER JOIN application_info i ON a.info_id = i.id
             WHERE e.kind = '{0}' AND i.name LIKE '%{1}%'
             GROUP BY e.date
@@ -129,7 +129,7 @@ impl SearchPlugin {
             SELECT
             e.date, COUNT(e.id) AS count
             FROM event_log e
-            INNER JOIN browser_log b ON e.log_id = b.id
+            INNER JOIN browser_log b ON e.id = b.event_id
             WHERE e.kind = '{0}' AND b.title LIKE '%{1}%'
             GROUP BY e.date
             ORDER BY e.date
@@ -165,7 +165,7 @@ impl SearchPlugin {
             SELECT
             e.date, COUNT(e.id) AS count
             FROM event_log e
-            INNER JOIN browser_log b ON e.log_id = b.id
+            INNER JOIN browser_log b ON e.id = b.event_id
             INNER JOIN browser_info i ON b.info_id = i.id
             WHERE e.kind = '{0}' AND i.url LIKE '%{1}%'
             GROUP BY e.date
@@ -202,7 +202,7 @@ impl SearchPlugin {
             SELECT
             e.date, COUNT(e.id) AS count
             FROM event_log e
-            INNER JOIN file_log f ON e.log_id = f.id
+            INNER JOIN file_log f ON e.id = f.event_id
             INNER JOIN file_info i ON f.info_id = i.id
             WHERE e.kind = '{0}' AND i.path LIKE '%{1}%'
             GROUP BY e.date
