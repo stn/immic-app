@@ -1,11 +1,12 @@
-use std::collections::HashMap;
-
 use anyhow::{Context, Result};
+use futures::TryStreamExt;
 use log::debug;
+use std::collections::HashMap;
 use tauri::{
     plugin::{self, TauriPlugin},
     AppHandle, Manager, State, Wry,
 };
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::plugins::{
     application,
@@ -13,6 +14,22 @@ use crate::plugins::{
     db::ImmicDb,
     filelog,
 };
+
+#[derive(Debug, serde::Serialize)]
+pub struct SearchLogsResult {
+    pub hits: Vec<HitsPerDay>,
+}
+
+#[derive(Debug, Default, serde::Serialize)]
+pub struct HitsPerDay {
+    pub date: String,
+    pub hits: i64,
+    pub application_name: Option<i64>,
+    pub application_title: Option<i64>,
+    pub browser_title: Option<i64>,
+    pub browser_url: Option<i64>,
+    pub file_path: Option<i64>,
+}
 
 pub fn init() -> TauriPlugin<Wry> {
     plugin::Builder::new("search")
@@ -40,35 +57,35 @@ impl SearchPlugin {
     }
 
     // Returns the number of items that hit the query per day
-    pub async fn search_logs(&self, query: String) -> Result<SearchLogsResult> {
-        debug!("search_logs: query={}", query);
-
+    pub async fn search_logs(&self, query: &str) -> Result<SearchLogsResult> {
         let db = self.app.try_state::<ImmicDb>().context("Failed to get db plugin")?;
         let pool = db.pool().await.context("Failed to get db pool")?;
 
         let mut hits: HashMap<String, HitsPerDay> = HashMap::new();
+        let query = format!("%{}%", tokenize_query(query).join("%"));
+        debug!("search_logs: query={}", query);
 
         // application title
-        let application_title_hits: Vec<(String, i64)> = sqlx::query_as::<_, (
+        let mut rows = sqlx::query_as::<_, (
             String, i64,
-        )>(format!(
+        )>(
             r#"
             SELECT
             e.date, COUNT(e.id) AS count
             FROM event_log e
-            INNER JOIN application_log a ON e.id = a.event_id
-            WHERE e.kind = '{0}' AND a.title LIKE '%{1}%'
+            INNER JOIN application_log a
+                ON e.kind = ?
+                AND e.id = a.event_id
+                AND a.title LIKE ?
             GROUP BY e.date
             ORDER BY e.date
-            "#,
-            application::KIND,
-            query).as_str()
+            "#
         )
-        .fetch_all(&pool)
-        .await
-        .unwrap_or(Vec::new());
+        .bind(application::KIND)
+        .bind(&query)
+        .fetch(&pool);
 
-        for (date, count) in application_title_hits {
+        while let Some((date, count)) = rows.try_next().await? {
             hits
                 .entry(date.clone())
                 .and_modify(|h| {
@@ -85,27 +102,28 @@ impl SearchPlugin {
         }
 
         // application name
-        let application_name_hits: Vec<(String, i64)> = sqlx::query_as::<_, (
+        let mut rows = sqlx::query_as::<_, (
             String, i64,
-        )>(format!(
+        )>(
             r#"
             SELECT
             e.date, COUNT(e.id) AS count
             FROM event_log e
-            INNER JOIN application_log a ON e.id = a.event_id
-            INNER JOIN application_info i ON a.info_id = i.id
-            WHERE e.kind = '{0}' AND i.name LIKE '%{1}%'
+            INNER JOIN application_log a
+                ON e.kind = ?
+                AND e.id = a.event_id
+            INNER JOIN application_info i
+                ON a.info_id = i.id
+                AND i.name LIKE ?
             GROUP BY e.date
             ORDER BY e.date
-            "#,
-            application::KIND,
-            query).as_str()
+            "#
         )
-        .fetch_all(&pool)
-        .await
-        .unwrap_or(Vec::new());
+        .bind(application::KIND)
+        .bind(&query)
+        .fetch(&pool);
 
-        for (date, count) in application_name_hits {
+        while let Some((date, count)) = rows.try_next().await? {
             hits
                 .entry(date.clone())
                 .and_modify(|h| {
@@ -122,26 +140,26 @@ impl SearchPlugin {
         }
 
         // browser title
-        let browser_title_hits: Vec<(String, i64)> = sqlx::query_as::<_, (
+        let mut rows = sqlx::query_as::<_, (
             String, i64,
-        )>(format!(
+        )>(
             r#"
             SELECT
             e.date, COUNT(e.id) AS count
             FROM event_log e
-            INNER JOIN browser_log b ON e.id = b.event_id
-            WHERE e.kind = '{0}' AND b.title LIKE '%{1}%'
+            INNER JOIN browser_log b
+                ON e.kind = ?
+                AND e.id = b.event_id
+                AND b.title LIKE ?
             GROUP BY e.date
             ORDER BY e.date
-            "#,
-            browser::KIND,
-            query).as_str()
+            "#
         )
-        .fetch_all(&pool)
-        .await
-        .unwrap_or(Vec::new());
+        .bind(browser::KIND)
+        .bind(&query)
+        .fetch(&pool);
 
-        for (date, count) in browser_title_hits {
+        while let Some((date, count)) = rows.try_next().await? {
             hits
                 .entry(date.clone())
                 .and_modify(|h| {
@@ -158,27 +176,28 @@ impl SearchPlugin {
         }
 
         // browser url
-        let browser_url_hits: Vec<(String, i64)> = sqlx::query_as::<_, (
+        let mut rows = sqlx::query_as::<_, (
             String, i64,
-        )>(format!(
+        )>(
             r#"
             SELECT
             e.date, COUNT(e.id) AS count
             FROM event_log e
-            INNER JOIN browser_log b ON e.id = b.event_id
-            INNER JOIN browser_info i ON b.info_id = i.id
-            WHERE e.kind = '{0}' AND i.url LIKE '%{1}%'
+            INNER JOIN browser_log b
+                ON e.kind = ?
+                AND e.id = b.event_id
+            INNER JOIN browser_url u
+                ON b.url_id = u.id
+                AND u.url LIKE ?
             GROUP BY e.date
             ORDER BY e.date
-            "#,
-            browser::KIND,
-            query).as_str()
+            "#
         )
-        .fetch_all(&pool)
-        .await
-        .unwrap_or(Vec::new());
+        .bind(browser::KIND)
+        .bind(&query)
+        .fetch(&pool);
 
-        for (date, count) in browser_url_hits {
+        while let Some((date, count)) = rows.try_next().await? {
             hits
                 .entry(date.clone())
                 .and_modify(|h| {
@@ -195,27 +214,28 @@ impl SearchPlugin {
         }
 
         // file path
-        let file_path_hits: Vec<(String, i64)> = sqlx::query_as::<_, (
+        let mut rows = sqlx::query_as::<_, (
             String, i64,
-        )>(format!(
+        )>(
             r#"
             SELECT
             e.date, COUNT(e.id) AS count
             FROM event_log e
-            INNER JOIN file_log f ON e.id = f.event_id
-            INNER JOIN file_info i ON f.info_id = i.id
-            WHERE e.kind = '{0}' AND i.path LIKE '%{1}%'
+            INNER JOIN file_log f
+                ON e.kind = ?
+                AND e.id = f.event_id
+            INNER JOIN file_info i
+                ON f.info_id = i.id
+                AND i.path LIKE ?
             GROUP BY e.date
             ORDER BY e.date
-            "#,
-            filelog::KIND,
-            query).as_str()
+            "#
         )
-        .fetch_all(&pool)
-        .await
-        .unwrap_or(Vec::new());
+        .bind(filelog::KIND)
+        .bind(&query)
+        .fetch(&pool);
 
-        for (date, count) in file_path_hits {
+        while let Some((date, count)) = rows.try_next().await? {
             hits
                 .entry(date.clone())
                 .and_modify(|h| {
@@ -240,23 +260,27 @@ impl SearchPlugin {
     }
 }
 
-#[derive(Debug, serde::Serialize)]
-pub struct SearchLogsResult {
-    pub hits: Vec<HitsPerDay>,
-}
-
-#[derive(Debug, Default, serde::Serialize)]
-pub struct HitsPerDay {
-    pub date: String,
-    pub hits: i64,
-    pub application_name: Option<i64>,
-    pub application_title: Option<i64>,
-    pub browser_title: Option<i64>,
-    pub browser_url: Option<i64>,
-    pub file_path: Option<i64>,
-}
-
 #[tauri::command]
 pub async fn search_logs(browser: State<'_, SearchPlugin>, query: String) -> Result<SearchLogsResult, String> {
-    browser.search_logs(query).await.map_err(|e| e.to_string())
+    browser.search_logs(&query).await.map_err(|e| e.to_string())
+}
+
+fn tokenize_query(query: &str) -> Vec<&str> {
+    query.unicode_words().collect::<Vec<&str>>()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tokenize_query() {
+        let query = "Hello, world!";
+        let expected = vec!["Hello", "world"];
+        assert_eq!(tokenize_query(query), expected);
+
+        let query = "こんにちは世界！";
+        let expected = vec!["こ", "ん", "に", "ち", "は", "世", "界"];
+        assert_eq!(tokenize_query(query), expected);
+    }
 }
