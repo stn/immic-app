@@ -21,7 +21,13 @@ use tauri::{
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
-use crate::plugins::db;
+use crate::{
+    app::event::{
+        ImmicEvent,
+        emit_event_to_info,
+    },
+    plugins::db,
+};
 
 pub const KIND: &str = "application";
 
@@ -113,7 +119,7 @@ impl ApplicationPlugin {
                                 continue;
                             }
 
-                            let ids = self_clone.insert_win_info(win_info.clone()).await;
+                            let ids = self_clone.insert_application_log_and_emit(win_info.clone().into()).await;
                             match ids {
                                 Ok((id, info_id)) => {
                                     last_win_info.replace(win_info);
@@ -149,29 +155,29 @@ impl ApplicationPlugin {
         debug!("ApplicationPlugin stopped");
     }
 
-    async fn insert_win_info(&self, win_info: WinInfo) -> Result<(i64, i64)> {
-        let timestamp = Utc::now();
+    // async fn insert_win_info(&self, win_info: WinInfo) -> Result<(i64, i64)> {
+    //     let timestamp = Utc::now();
 
-        let db = self.app.state::<db::ImmicDb>();
-        let pool = db.pool().await?;
+    //     let db = self.app.state::<db::ImmicDb>();
+    //     let pool = db.pool().await?;
 
-        let application_log = ApplicationLog {
-            id: 0,  // dummy
-            timestamp: timestamp.timestamp(),
-            date: "".to_string(), // dummy
-            path: win_info.path,
-            name: Some(win_info.name),
-            process_id: Some(win_info.process_id),
-            title: Some(win_info.title),
-            x: Some(win_info.x),
-            y: Some(win_info.y),
-            width: Some(win_info.width),
-            height: Some(win_info.height),
-            ref_id: None,
-        };
+    //     let application_log = ApplicationLog {
+    //         id: 0,  // dummy
+    //         timestamp: timestamp.timestamp(),
+    //         date: "".to_string(), // dummy
+    //         path: win_info.path,
+    //         name: Some(win_info.name),
+    //         process_id: Some(win_info.process_id),
+    //         title: Some(win_info.title),
+    //         x: Some(win_info.x),
+    //         y: Some(win_info.y),
+    //         width: Some(win_info.width),
+    //         height: Some(win_info.height),
+    //         ref_id: None,
+    //     };
 
-        self.insert_application_log_with(&pool, application_log).await
-    }
+    //     self.insert_application_log_with(&pool, &application_log).await
+    // }
 
     async fn insert_win_info_ref(&self, ref_id: i64, info_id: i64) -> Result<i64> {
         let timestamp = Utc::now();
@@ -197,7 +203,24 @@ impl ApplicationPlugin {
         Ok(log_id)
     }
 
-    pub async fn insert_application_log_with(&self, pool: &Pool<Sqlite>, log: ApplicationLog) -> Result<(i64, i64)> {
+    async fn insert_application_log_and_emit(&self, application_log: ApplicationLog) -> Result<(i64, i64)> {
+        let result = self.insert_application_log(&application_log).await?;
+
+        // send event
+        let event = ImmicEvent::Application(application_log);
+        emit_event_to_info(&self.app, event).context("Failed to emit event")?;
+
+        Ok(result)
+    }
+
+    async fn insert_application_log(&self, application_log: &ApplicationLog) -> Result<(i64, i64)> {
+        let db = self.app.state::<db::ImmicDb>();
+        let pool = db.pool().await?;
+
+        self.insert_application_log_with(&pool, application_log).await
+    }
+
+    pub async fn insert_application_log_with(&self, pool: &Pool<Sqlite>, log: &ApplicationLog) -> Result<(i64, i64)> {
         ensure!(log.ref_id.is_none(), "ref_id must be None");
 
         let timestamp = DateTime::from_timestamp(log.timestamp, 0).context("Invalid timestamp")?;
@@ -412,7 +435,7 @@ async fn check_application() -> Option<WinInfo> {
 
 // ApplicationLog
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApplicationLog {
     pub id: i64,
     pub timestamp: i64,
@@ -426,6 +449,25 @@ pub struct ApplicationLog {
     pub width: Option<i64>,
     pub height: Option<i64>,
     pub ref_id: Option<i64>,
+}
+
+impl From<WinInfo> for ApplicationLog {
+    fn from(win_info: WinInfo) -> Self {
+        ApplicationLog {
+            id: 0,  // dummy
+            timestamp: Utc::now().timestamp(),
+            date: "".to_string(), // dummy
+            path: win_info.path,
+            name: Some(win_info.name),
+            process_id: Some(win_info.process_id),
+            title: Some(win_info.title),
+            x: Some(win_info.x),
+            y: Some(win_info.y),
+            width: Some(win_info.width),
+            height: Some(win_info.height),
+            ref_id: None,
+        }
+    }
 }
 
 impl db::Timestamp for ApplicationLog {

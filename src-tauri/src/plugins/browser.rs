@@ -4,7 +4,7 @@ use actix_web::{
     http, middleware, web,
     App, HttpServer,
 };
-use anyhow::{Context as _, Result, ensure};
+use anyhow::{Context as _, Result};
 use chrono::DateTime;
 use futures::TryStreamExt;
 use log::{debug, error};
@@ -19,10 +19,10 @@ use tauri::{
 };
 use url::Url;
 
-use crate::plugins::{
+use crate::{app::event::{emit_event_to_info, ImmicEvent}, plugins::{
     db::ImmicDb,
     setting::SettingPlugin,
-};
+}};
 
 use super::db;
 
@@ -76,39 +76,61 @@ impl BrowserPlugin {
         debug!("browser plugin stop");
     }
 
-    async fn maybe_insert_info(&self, info: TabInfo) -> Result<Option<i64>> {
-        if self.check_debounce(&info).await? {
+    // async fn maybe_insert_info(&self, info: TabInfo) -> Result<Option<i64>> {
+    //     if self.check_debounce(&info).await? {
+    //         debug!("browsers: debounced!");
+    //         return Ok(None);
+    //     }
+    //     let id = self.insert_info(info).await?;
+    //     Ok(Some(id))
+    // }
+
+    async fn maybe_insert_browser_log_and_emit(&self, log: BrowserLog) -> Result<Option<i64>> {
+        if self.check_debounce(&log).await? {
             debug!("browsers: debounced!");
             return Ok(None);
         }
-        let id = self.insert_info(info).await?;
+
+        let id = self.insert_browser_log(&log).await?;
+
+        // send an event
+        let event = ImmicEvent::Browser(log);
+        emit_event_to_info(&self.app, event).context("Failed to emit event")?;
+
         Ok(Some(id))
     }
 
-    async fn insert_info(&self, info: TabInfo) -> Result<i64> {
-        ensure!(info.url.is_some(), "url is required");
-
+    async fn insert_browser_log(&self, log: &BrowserLog) -> Result<i64> {
         let db = self.app.state::<ImmicDb>();
         let pool = db.pool().await.context("db pool is not set")?;
 
-        let timestamp = DateTime::from_timestamp_millis(info.timestampMs).context("Invalid timestamp")?;
-        let browser_log = BrowserLog {
-            id: 0,  // dummy
-            timestamp: timestamp.timestamp(),
-            date: "".to_string(),  // dummy
-            url: info.url.unwrap(),  // checked in the above
-            title: info.title,
-            fav_icon_url: info.favIconUrl,
-            referrer: info.referrer,
-            tab_id: info.tabId,
-            opener_tab_id: info.openerTabId,
-            window_id: info.windowId,
-        };
-
-        self.insert_browser_log_with(&pool, browser_log).await
+        self.insert_browser_log_with(&pool, log).await
     }
 
-    pub async fn insert_browser_log_with(&self, pool: &Pool<Sqlite>, log: BrowserLog) -> Result<i64> {
+    // async fn insert_info(&self, info: TabInfo) -> Result<i64> {
+    //     ensure!(info.url.is_some(), "url is required");
+
+    //     let db = self.app.state::<ImmicDb>();
+    //     let pool = db.pool().await.context("db pool is not set")?;
+
+    //     let timestamp = DateTime::from_timestamp_millis(info.timestampMs).context("Invalid timestamp")?;
+    //     let browser_log = BrowserLog {
+    //         id: 0,  // dummy
+    //         timestamp: timestamp.timestamp(),
+    //         date: "".to_string(),  // dummy
+    //         url: info.url.unwrap(),  // checked in the above
+    //         title: info.title,
+    //         fav_icon_url: info.favIconUrl,
+    //         referrer: info.referrer,
+    //         tab_id: info.tabId,
+    //         opener_tab_id: info.openerTabId,
+    //         window_id: info.windowId,
+    //     };
+
+    //     self.insert_browser_log_with(&pool, browser_log).await
+    // }
+
+    pub async fn insert_browser_log_with(&self, pool: &Pool<Sqlite>, log: &BrowserLog) -> Result<i64> {
         let timestamp = DateTime::from_timestamp(log.timestamp, 0).context("Invalid timestamp")?;
 
         let db = self.app.state::<ImmicDb>();
@@ -288,14 +310,8 @@ impl BrowserPlugin {
         Ok(log_id)
     }
 
-    async fn check_debounce(&self, info: &TabInfo) -> Result<bool> {
-        ensure!(info.url.is_some(), "url is required");
-
-        let timestamp = DateTime::from_timestamp_millis(info.timestampMs).context("Invalid timestamp")?;
-        let timestamp = timestamp.timestamp();
-
-        let url = info.url.as_ref().unwrap();  // checked in the above
-        let (_origin, url, _query) = parse_url(url)?;
+    async fn check_debounce(&self, log: &BrowserLog) -> Result<bool> {
+        let (_origin, url, _query) = parse_url(&log.url)?;
 
         let db = self.app.state::<db::ImmicDb>();
         let pool = db.pool().await.context("db pool is not set")?;
@@ -312,7 +328,7 @@ impl BrowserPlugin {
         .await;
 
         if let Ok((Some(last_update),)) = result {
-            if timestamp - last_update < DEBOUNCE_THRESHOLD {
+            if log.timestamp - last_update < DEBOUNCE_THRESHOLD {
                 // faviconの更新があるケースがあるのをどうするか。
                 // faviconの更新だけここで行うか？
                 return Ok(true);
@@ -436,9 +452,30 @@ struct TabInfo {
 pub async fn browserlog(tab_info: web::Json<TabInfo>, data: web::Data<AppHandle>) -> actix_web::Result<String> {
     debug!("tab_info: {:?}", tab_info);
 
-    let browser_plugin = data.get_ref().state::<BrowserPlugin>();
+    if tab_info.url.is_none() || tab_info.url.as_ref().unwrap().is_empty() {
+        return Err(actix_web::error::ErrorBadRequest("url is required"));
+    }
 
-    if let Err(e) = browser_plugin.maybe_insert_info(tab_info.into_inner()).await {
+    let timestamp = DateTime::from_timestamp_millis(tab_info.timestampMs);
+    if timestamp.is_none() {
+        return Err(actix_web::error::ErrorBadRequest("Invalid timestamp"));
+    }
+
+    let browser_log = BrowserLog {
+        id: 0,  // dummy
+        timestamp: timestamp.unwrap().timestamp(),
+        date: "".to_string(),  // dummy
+        url: tab_info.url.clone().unwrap(),
+        title: tab_info.title.clone(),
+        fav_icon_url: tab_info.favIconUrl.clone(),
+        referrer: tab_info.referrer.clone(),
+        tab_id: tab_info.tabId,
+        opener_tab_id: tab_info.openerTabId,
+        window_id: tab_info.windowId,
+    };
+
+    let browser_plugin = data.get_ref().state::<BrowserPlugin>();
+    if let Err(e) = browser_plugin.maybe_insert_browser_log_and_emit(browser_log).await {
         error!("Error on insert: {:?}", e);
         return Err(actix_web::error::ErrorInternalServerError(e));
     }
@@ -446,7 +483,7 @@ pub async fn browserlog(tab_info: web::Json<TabInfo>, data: web::Data<AppHandle>
     Ok("ok".to_string())
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BrowserLog {
     pub id: i64,
     pub timestamp: i64,
