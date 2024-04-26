@@ -62,6 +62,16 @@
         "resizable": true,
         "width": 2200,
         "height": 900
+      },
+      {
+        "label": "info",
+        "title": "Immic Info",
+        "url": "info.html",
+        "fullscreen": false,
+        "resizable": true,
+        "width": 400,
+        "height": 300,
+        "visible": true
       }
     ]
   }

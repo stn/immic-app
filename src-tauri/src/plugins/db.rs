@@ -262,17 +262,17 @@ impl ImmicDb {
             match log {
                 AnyLog::ApplicationLogEntry(log) => {
                     if log.ref_id.is_none() {
-                        let ids = application.insert_application_log_with(&pool, log).await?;
+                        let ids = application.insert_application_log_with(&pool, &log).await?;
                         last_application_log.replace(ids);
                     } else {
                         application.insert_application_log_ref_with(&pool, log, &last_application_log).await?;
                     }
                 },
                 AnyLog::BrowserLogEntry(log) => {
-                    browser.insert_browser_log_with(&pool, log).await?;
+                    browser.insert_browser_log_with(&pool, &log).await?;
                 },
                 AnyLog::FileLogEntry(log) => {
-                    filelog.insert_file_log_with(&pool, log).await?;
+                    filelog.insert_file_log_with(&pool, &log).await?;
                 },
                 AnyLog::ScreenshotLogEntry(log) => {
                     screenshot.insert_screenshot_log_with(&pool, log).await?;

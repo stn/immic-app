@@ -33,10 +33,10 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
-use crate::plugins::{
+use crate::{app::event::{emit_event_to_info, ImmicEvent}, plugins::{
     db,
     setting::SettingPlugin,
-};
+}};
 
 pub const KIND: &str = "file";
 const WATCH_PATHSEST_SETTING: &str = "watch-pathset";
@@ -147,8 +147,19 @@ impl FilelogPlugin {
         while let Some(infos) = rx.recv().await {
             for mut info in infos {
                 debug!("file event info: {:?}", info);
+
                 info.watch_dir = Some(path.clone());
-                if let Err(e) = self.maybe_insert_info(info).await {
+
+                let file_log = FileLog {
+                    id: 0,  // dummy
+                    timestamp: Utc::now().timestamp(),
+                    date: "".to_string(),  // dummy
+                    path: info.path.to_string_lossy().to_string(),
+                    kind: Some(info.kind.to_string()),
+                    watch_dir: info.watch_dir.map(|p| p.to_string_lossy().to_string()),
+                };
+
+                if let Err(e) = self.maybe_insert_file_log_and_emit(file_log).await {
                     error!("Error on maybe_insert_info: {:?}", e);
                 }
             }
@@ -237,34 +248,55 @@ impl FilelogPlugin {
         debug!("FilelogPlugin stopped");
     }
 
-    async fn maybe_insert_info(&self, info: FileEventInfo) -> Result<Option<i64>> {
-        if self.check_debounce(&info).await? {
+    // async fn maybe_insert_info(&self, info: FileEventInfo) -> Result<Option<i64>> {
+    //     if self.check_debounce(&info).await? {
+    //         debug!("filelog: debounced!");
+    //         return Ok(None);
+    //     }
+    //     let id = self.insert_info(info).await?;
+    //     Ok(Some(id))
+    // }
+
+    async fn maybe_insert_file_log_and_emit(&self, log: FileLog) -> Result<Option<i64>> {
+        if self.check_debounce(&log).await? {
             debug!("filelog: debounced!");
             return Ok(None);
         }
-        let id = self.insert_info(info).await?;
+        let id = self.insert_file_log(&log).await?;
+
+        // send event
+        let event = ImmicEvent::File(log);
+        emit_event_to_info(&self.app, event).context("Failed to emit event")?;
+
         Ok(Some(id))
     }
 
-    async fn insert_info(&self, info: FileEventInfo) -> Result<i64> {
-        let timestamp = Utc::now();
-
+    async fn insert_file_log(&self, log: &FileLog) -> Result<i64> {
         let db = self.app.state::<db::ImmicDb>();
         let pool = db.pool().await?;
 
-        let file_log = FileLog {
-            id: 0,  // dummy
-            timestamp: timestamp.timestamp(),
-            date: "".to_string(),  // dummy
-            path: info.path.to_string_lossy().to_string(),
-            kind: Some(info.kind.to_string()),
-            watch_dir: info.watch_dir.map(|p| p.to_string_lossy().to_string()),
-        };
-
-        self.insert_file_log_with(&pool, file_log).await
+        self.insert_file_log_with(&pool, log).await
     }
 
-    pub async fn insert_file_log_with(&self, pool: &Pool<Sqlite>, log: FileLog) -> Result<i64> {
+    // async fn insert_info(&self, info: FileEventInfo) -> Result<i64> {
+    //     let timestamp = Utc::now();
+
+    //     let db = self.app.state::<db::ImmicDb>();
+    //     let pool = db.pool().await?;
+
+    //     let file_log = FileLog {
+    //         id: 0,  // dummy
+    //         timestamp: timestamp.timestamp(),
+    //         date: "".to_string(),  // dummy
+    //         path: info.path.to_string_lossy().to_string(),
+    //         kind: Some(info.kind.to_string()),
+    //         watch_dir: info.watch_dir.map(|p| p.to_string_lossy().to_string()),
+    //     };
+
+    //     self.insert_file_log_with(&pool, file_log).await
+    // }
+
+    pub async fn insert_file_log_with(&self, pool: &Pool<Sqlite>, log: &FileLog) -> Result<i64> {
         let timestamp = DateTime::from_timestamp(log.timestamp, 0).context("Invalid timestamp")?;
 
         let db = self.app.state::<db::ImmicDb>();
@@ -369,9 +401,7 @@ impl FilelogPlugin {
         Ok(log_id)
     }
 
-    async fn check_debounce(&self, info: &FileEventInfo) -> Result<bool> {
-        let timestamp = Utc::now().timestamp();
-
+    async fn check_debounce(&self, log: &FileLog) -> Result<bool> {
         let db = self.app.state::<db::ImmicDb>();
         let pool = db.pool().await?;
 
@@ -382,12 +412,12 @@ impl FilelogPlugin {
             WHERE path = ?
             "#
         )
-        .bind(&info.path.to_string_lossy().to_string())
+        .bind(&log.path)
         .fetch_one(&pool)
         .await;
 
         if let Ok((Some(last_update),)) = result {
-            if timestamp - last_update < DEBOUNCE_THRESHOLD {
+            if log.timestamp - last_update < DEBOUNCE_THRESHOLD {
                 return Ok(true);
             }
         }
@@ -560,7 +590,7 @@ fn check_ignore(info: &FileEventInfo) -> bool {
     false
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FileLog {
     pub id: i64,
     pub timestamp: i64,
