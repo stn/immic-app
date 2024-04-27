@@ -7,7 +7,7 @@ import {
 } from "@/components/ui/tooltip"
 
 import type { BrowserLog } from "@/lib/events";
-import { timestamp_mmss } from "@/lib/utils";
+import { cn, timestamp_mmss } from "@/lib/utils";
 
 export interface BrowserlogProps
     extends React.HTMLAttributes<HTMLDivElement> {
@@ -18,7 +18,7 @@ export interface BrowserlogProps
 const BrowserLogItem = React.forwardRef<HTMLDivElement, BrowserlogProps>(
     ({ browserlog, showTime=true, className, ...props }, ref) => {
         return (
-            <div className={className} ref={ref} {...props}>
+            <div className={cn("indent-11", className)} ref={ref} {...props}>
                 <TooltipProvider>
                     <Tooltip>
                         <TooltipTrigger>

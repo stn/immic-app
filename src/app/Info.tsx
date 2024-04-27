@@ -13,26 +13,58 @@ function Info() {
   useKey("Escape", () => { appWindow.hide(); })
 
   const event = useTauriEvent();
-  const [lastEvent, setLastEvent] = useState<ImmicEvent | null>(null);
+  const [events, setEvents] = useState<ImmicEvent[]>([]);
 
   useEffect(() => {
     if (event) {
-      console.log('tauri-event:', event);
-      setLastEvent(event);
+      // console.log("event", event);
+      const now = new Date().getTime() / 1000.0;
+      let new_events = [event, ...events];
+      new_events = new_events.filter((e) => (now - event_timestamp(e)) < 60); // TODO setting
+      setEvents(new_events);
     }
   }, [event]);
 
   return (
     <ThemeProvider defaultTheme="dark" storageKey="ui-theme">
       <div>
-        <h1>Info</h1>
         {/* <div>{lastEvent && JSON.stringify(lastEvent, null, 2)}</div> */}
-        { event?.Application && <ApplicationLogItem applicationlog={event.Application} /> }
-        { event?.Browser && <BrowserLogItem browserlog={event.Browser} /> }
-        { event?.File && <FileLogItem filelog={event.File} /> }
+        {events.map((e) => (
+          <div key={event_id(e)}>
+            { e.Application && <ApplicationLogItem applicationlog={e.Application} /> }
+            { e.Browser && <BrowserLogItem browserlog={e.Browser} /> }
+            { e.File && <FileLogItem filelog={e.File} /> }
+          </div>
+        ))}
       </div>
     </ThemeProvider>
   );
+}
+
+function event_timestamp(event: ImmicEvent): number {
+  if (event.Application) {
+    return event.Application.timestamp;
+  }
+  if (event.Browser) {
+    return event.Browser.timestamp;
+  }
+  if (event.File) {
+    return event.File.timestamp;
+  }
+  return 0;
+}
+
+function event_id(event: ImmicEvent): string {
+  if (event.Application) {
+    return `a${event.Application.id}`;
+  }
+  if (event.Browser) {
+    return `b${event.Browser.id}`;
+  }
+  if (event.File) {
+    return `f${event.File.id}`;
+  }
+  return "unknown";
 }
 
 export default Info;
