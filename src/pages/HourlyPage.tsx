@@ -18,6 +18,13 @@ import {
   FileLog,
   ScreenshotLog
 } from "@/lib/events";
+import {
+  timestamp_hhmm,
+  timestamp_mmss,
+} from "@/lib/utils";
+import { FileLogItem } from "@/components/elements/FilelogItem";
+import { BrowserLogItem } from "@/components/elements/BrowserLogItem";
+import { ApplicationLogItem } from "@/components/elements/ApplicationLogItem";
 
 function HourlyPage() {
   const params = useParams();
@@ -104,72 +111,21 @@ function HourlyPage() {
                     </div>
                     <div className="flex-auto w-96">
                       {applications.map((app) => (
-                        <div key={app.id}>
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger>
-                                  {/* <div className="text-left">{timestamp_mm(app.timestamp)} {app.name}</div> */}
-                                  <div className="text-left">{app.name}</div>
-                                  <div className="text-left pl-6">{app.title}</div>
-                                </TooltipTrigger>
-                                <TooltipContent side="bottom">
-                                  {app.path}
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          {/* {JSON.stringify(app)} */}
-                        </div>
+                        <ApplicationLogItem key={app.id} applicationlog={app} showTime={false} />
                       ))}
                     </div>
                     <div className="flex-auto w-96">
-                      <ul className="list-none ml-10">
-                        {browsers.map((browser) => (
-                          <li key={browser.id}>
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger>
-                                  <div className="text-left -indent-10">
-                                    {/* <img src={browser.fav_icon_url} alt="favicon" /> */}
-                                    {timestamp_mmss(browser.timestamp)}&nbsp;
-                                    <a href={browser.url} target="_blank" rel="noopener noreferrer"
-                                      className="decoration-1 underline-offset-2 hover:underline"
-                                    >
-                                      {browser.title}
-                                    </a>
-                                  </div>
-                                </TooltipTrigger>
-                                <TooltipContent side="bottom">
-                                  {browser.url}
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                            {/* {JSON.stringify(browser)} */}
-                          </li>
-                        ))}
-                      </ul>
+                      {browsers.map((browser) => (
+                        <BrowserLogItem key={browser.id} browserlog={browser} />
+                      ))}
                     </div>
                     <div className="flex-auto w-96">
                       <div className="ml-10">
                         {filelogs.map((filelog) => (
-                          <div key={filelog.id}>
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger>
-                                  <div className="text-left -indent-10">
-                                    {timestamp_mmss(filelog.timestamp)}
-                                    {filelog.kind === "create" ? "🗒️" :
-                                    filelog.kind === "modify" ? "📝" : 
-                                    filelog.kind === "remove" ? "🗑️" :
-                                    "?"}&nbsp;{filename(filelog.path)}
-                                    {/* {JSON.stringify(filelog)} */}
-                                  </div>
-                                </TooltipTrigger>
-                                <TooltipContent side="bottom">
-                                  {filelog.path}
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          </div>
+                          <FileLogItem
+                            key={filelog.id}
+                            filelog={filelog}
+                          />
                         ))}
                       </div>
                     </div>
@@ -230,25 +186,6 @@ function zipLogs(logs: [ScreenshotLog[], ApplicationLog[], BrowserLog[], FileLog
   }
 
   return zipped;
-}
-
-// function timestamp_mm(timestamp: number): string {
-//   let date = new Date(timestamp * 1000);
-//   return ("0" + date.toLocaleTimeString("ja-JP", { minute: "numeric" })).slice(-2);
-// }
-
-function timestamp_mmss(timestamp: number): string {
-  let date = new Date(timestamp * 1000);
-  return ("0" + date.toLocaleTimeString("ja-JP", { minute: "2-digit", second: "2-digit" })).slice(-5);
-}
-
-function timestamp_hhmm(timestamp: number): string {
-  let date = new Date(timestamp * 1000);
-  return ("0" + date.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit"})).slice(-5);
-}
-
-function filename(path: string): string {
-  return path.split(/[/\\]/).pop() || "";
 }
 
 export default HourlyPage;

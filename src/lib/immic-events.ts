@@ -11,10 +11,10 @@ type TEvent = {
     payload: ImmicEvent;
 };
 
-type ImmicEvent = {
-    application?: ApplicationLog;
-    browser?: BrowserLog;
-    file?: FileLog;
+export type ImmicEvent = {
+    Application?: ApplicationLog;
+    Browser?: BrowserLog;
+    File?: FileLog;
 };
 
 const eventStore = {
