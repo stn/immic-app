@@ -2,13 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
-
-import {
   image_url,
   listTimelineOn,
 } from "@/lib/api";
@@ -20,7 +13,6 @@ import {
 } from "@/lib/events";
 import {
   timestamp_hhmm,
-  timestamp_mmss,
 } from "@/lib/utils";
 import { FileLogItem } from "@/components/elements/FilelogItem";
 import { BrowserLogItem } from "@/components/elements/BrowserLogItem";
