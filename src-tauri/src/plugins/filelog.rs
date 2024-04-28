@@ -33,10 +33,17 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
-use crate::{app::event::{emit_event_to_info, ImmicEvent}, plugins::{
-    db,
-    setting::SettingPlugin,
-}};
+use crate::{
+    app::event::{
+        emit_event_to_info,
+        ImmicEvent,
+        SearchHit,
+    },
+    plugins::{
+        db,
+        setting::SettingPlugin,
+    },
+};
 
 pub const KIND: &str = "file";
 const WATCH_PATHSEST_SETTING: &str = "watch-pathset";
@@ -154,6 +161,7 @@ impl FilelogPlugin {
                     id: 0,  // dummy
                     timestamp: Utc::now().timestamp(),
                     date: "".to_string(),  // dummy
+                    info_id: 0,  // dummy
                     path: info.path.to_string_lossy().to_string(),
                     kind: Some(info.kind.to_string()),
                     watch_dir: info.watch_dir.map(|p| p.to_string_lossy().to_string()),
@@ -257,21 +265,24 @@ impl FilelogPlugin {
     //     Ok(Some(id))
     // }
 
-    async fn maybe_insert_file_log_and_emit(&self, log: FileLog) -> Result<Option<i64>> {
+    async fn maybe_insert_file_log_and_emit(&self, log: FileLog) -> Result<Option<FileLog>> {
         if self.check_debounce(&log).await? {
             debug!("filelog: debounced!");
             return Ok(None);
         }
-        let id = self.insert_file_log(&log).await?;
+        let result = self.insert_file_log(log).await?;
+
+        // search for hits
+        let hits = self.search_for(&result).await?;
 
         // send event
-        let event = ImmicEvent::File(log);
+        let event = ImmicEvent::File(result.clone(), hits);
         emit_event_to_info(&self.app, event).context("Failed to emit event")?;
 
-        Ok(Some(id))
+        Ok(Some(result))
     }
 
-    async fn insert_file_log(&self, log: &FileLog) -> Result<i64> {
+    async fn insert_file_log(&self, log: FileLog) -> Result<FileLog> {
         let db = self.app.state::<db::ImmicDb>();
         let pool = db.pool().await?;
 
@@ -296,7 +307,7 @@ impl FilelogPlugin {
     //     self.insert_file_log_with(&pool, file_log).await
     // }
 
-    pub async fn insert_file_log_with(&self, pool: &Pool<Sqlite>, log: &FileLog) -> Result<i64> {
+    pub async fn insert_file_log_with(&self, pool: &Pool<Sqlite>, log: FileLog) -> Result<FileLog> {
         let timestamp = DateTime::from_timestamp(log.timestamp, 0).context("Invalid timestamp")?;
 
         let db = self.app.state::<db::ImmicDb>();
@@ -398,7 +409,18 @@ impl FilelogPlugin {
         .await?;
 
         let log_id = result.last_insert_rowid();
-        Ok(log_id)
+
+        let file_log = FileLog {
+            id: log_id,
+            timestamp: log.timestamp,
+            date: event_log.date,
+            info_id,
+            path: log.path,
+            kind: log.kind,
+            watch_dir: log.watch_dir,
+        };
+
+        Ok(file_log)
     }
 
     async fn check_debounce(&self, log: &FileLog) -> Result<bool> {
@@ -432,14 +454,14 @@ impl FilelogPlugin {
         let mut rows = sqlx::query_as::<_, (
             i64,
             i64, Option<String>,
-            String,
+            i64, String,
             Option<String>,
         )>(
             r#"
             SELECT
             e.timestamp,
             f.id, f.kind,
-            i.path,
+            i.id, i.path,
             w.dir
             FROM event_log e
             INNER JOIN file_log f ON e.id = f.event_id
@@ -458,13 +480,14 @@ impl FilelogPlugin {
             let (
                 timestamp,
                 id, kind,
-                path,
+                info_id, path,
                 watch_dir,
             ) = row;
             filelogs.push(FileLog {
                 id,
                 timestamp,
                 date: date.to_string(),
+                info_id,
                 path,
                 kind,
                 watch_dir,
@@ -503,6 +526,41 @@ impl FilelogPlugin {
     //         }
     //     }
     // }
+
+    pub async fn search_for(&self, log: &FileLog) -> Result<Vec<SearchHit>> {
+        let db = self.app.state::<db::ImmicDb>();
+        let pool = db.pool().await?;
+
+        let mut rows = sqlx::query_as::<_, (
+            i64, i64,
+        )>(
+            r#"
+            SELECT
+                f.id,
+                e.timestamp
+            FROM file_log f
+            INNER JOIN event_log e
+                ON f.info_id = ?
+                AND f.event_id = e.id
+            ORDER BY e.timestamp
+            "#
+        )
+        .bind(log.info_id)
+        .fetch(&pool);
+
+        let mut hits = Vec::new();
+        while let Some(row) = rows.try_next().await? {
+            let (
+                id,
+                timestamp,
+            ) = row;
+            hits.push(SearchHit {
+                id,
+                timestamp,
+            });
+        }
+        Ok(hits)
+    }
 }
 
 #[derive(Debug,PartialEq)]
@@ -595,6 +653,7 @@ pub struct FileLog {
     pub id: i64,
     pub timestamp: i64,
     pub date: String,
+    pub info_id: i64,
     pub path: String,
     pub kind: Option<String>,
     pub watch_dir: Option<String>,

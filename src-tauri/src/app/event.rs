@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use serde::{Deserialize, Serialize};
+use serde::{Serialize};
 use tauri::{AppHandle, Manager};
 
 use crate::plugins::{
@@ -21,8 +21,8 @@ pub struct SearchHit {
 #[derive(Clone, Debug, Serialize)]
 pub enum ImmicEvent {
     Application(ApplicationLog, Vec<SearchHit>),
-    Browser(BrowserLog),
-    File(FileLog),
+    Browser(BrowserLog, Vec<SearchHit>),
+    File(FileLog, Vec<SearchHit>),
 }
 
 pub fn emit_event(app: &AppHandle, event: ImmicEvent) -> Result<()> {

@@ -18,8 +18,8 @@ export type SearchHit = {
 
 export type ImmicEvent = {
     Application?: [ApplicationLog, SearchHit[]];
-    Browser?: BrowserLog;
-    File?: FileLog;
+    Browser?: [BrowserLog, SearchHit[]];
+    File?: [FileLog, SearchHit[]];
 };
 
 const eventStore = {

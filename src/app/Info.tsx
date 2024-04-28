@@ -28,7 +28,6 @@ function Info() {
   return (
     <ThemeProvider defaultTheme="dark" storageKey="ui-theme">
       <div>
-        {/* <div>{lastEvent && JSON.stringify(lastEvent, null, 2)}</div> */}
         {events.map((e) => (
           <div key={event_id(e)}>
             { e.Application && (
@@ -43,8 +42,30 @@ function Info() {
                 </div>
               </div>
             )}
-            { e.Browser && <BrowserLogItem browserlog={e.Browser} /> }
-            { e.File && <FileLogItem filelog={e.File} /> }
+            { e.Browser && (
+              <div>
+                <BrowserLogItem browserlog={e.Browser[0]} />
+                <div>
+                  { e.Browser[1].map((h) => (
+                    <span key={h.id}>
+                      ({h.id}, {h.timestamp})
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            { e.File && (
+              <div>
+                <FileLogItem filelog={e.File[0]} />
+                <div>
+                  { e.File[1].map((h) => (
+                    <span key={h.id}>
+                      ({h.id}, {h.timestamp})
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -57,10 +78,10 @@ function event_timestamp(event: ImmicEvent): number {
     return event.Application[0].timestamp;
   }
   if (event.Browser) {
-    return event.Browser.timestamp;
+    return event.Browser[0].timestamp;
   }
   if (event.File) {
-    return event.File.timestamp;
+    return event.File[0].timestamp;
   }
   return 0;
 }
@@ -70,10 +91,10 @@ function event_id(event: ImmicEvent): string {
     return `a${event.Application[0].id}`;
   }
   if (event.Browser) {
-    return `b${event.Browser.id}`;
+    return `b${event.Browser[0].id}`;
   }
   if (event.File) {
-    return `f${event.File.id}`;
+    return `f${event.File[0].id}`;
   }
   return "unknown";
 }
