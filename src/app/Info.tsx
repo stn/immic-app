@@ -34,10 +34,10 @@ function Info() {
               <div>
                 <ApplicationLogItem applicationlog={e.Application[0]} />
                 <div>
-                  { e.Application[1].map((h) => (
-                    <span key={h.id}>
-                      ({h.id}, {h.timestamp})
-                    </span>
+                  { e.Application[1].map((hitsPerDay) => (
+                    <div key={hitsPerDay.date}>
+                      {hitsPerDay.date} ({hitsPerDay.application_title_count})
+                    </div>
                   ))}
                 </div>
               </div>
@@ -46,10 +46,10 @@ function Info() {
               <div>
                 <BrowserLogItem browserlog={e.Browser[0]} />
                 <div>
-                  { e.Browser[1].map((h) => (
-                    <span key={h.id}>
-                      ({h.id}, {h.timestamp})
-                    </span>
+                  { e.Browser[1].map((hitsPerDay) => (
+                    <div key={hitsPerDay.date}>
+                      {hitsPerDay.date} ({hitsPerDay.browser_url_count})
+                    </div>
                   ))}
                 </div>
               </div>
@@ -58,10 +58,10 @@ function Info() {
               <div>
                 <FileLogItem filelog={e.File[0]} />
                 <div>
-                  { e.File[1].map((h) => (
-                    <span key={h.id}>
-                      ({h.id}, {h.timestamp})
-                    </span>
+                  { e.File[1].map((hitsPerDay) => (
+                    <div key={hitsPerDay.date}>
+                      {hitsPerDay.date} ({hitsPerDay.file_path_count})
+                    </div>
                   ))}
                 </div>
               </div>

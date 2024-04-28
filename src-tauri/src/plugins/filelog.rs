@@ -13,7 +13,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashSet,
+    collections::{HashSet, HashMap},
     fmt,
     path::PathBuf,
     sync::{Arc, Mutex},
@@ -37,10 +37,10 @@ use crate::{
     app::event::{
         emit_event_to_info,
         ImmicEvent,
-        SearchHit,
     },
     plugins::{
         db,
+        search::{SearchHit, HitsPerDay},
         setting::SettingPlugin,
     },
 };
@@ -527,17 +527,18 @@ impl FilelogPlugin {
     //     }
     // }
 
-    pub async fn search_for(&self, log: &FileLog) -> Result<Vec<SearchHit>> {
+    pub async fn search_for(&self, log: &FileLog) -> Result<Vec<HitsPerDay>> {
         let db = self.app.state::<db::ImmicDb>();
         let pool = db.pool().await?;
 
         let mut rows = sqlx::query_as::<_, (
-            i64, i64,
+            i64,
+            i64, String
         )>(
             r#"
             SELECT
                 f.id,
-                e.timestamp
+                e.timestamp, e.date
             FROM file_log f
             INNER JOIN event_log e
                 ON f.info_id = ?
@@ -548,17 +549,38 @@ impl FilelogPlugin {
         .bind(log.info_id)
         .fetch(&pool);
 
-        let mut hits = Vec::new();
-        while let Some(row) = rows.try_next().await? {
-            let (
-                id,
-                timestamp,
-            ) = row;
-            hits.push(SearchHit {
-                id,
-                timestamp,
-            });
+        let mut hits: HashMap<String, HitsPerDay> = HashMap::new();
+        while let Some((id, timestamp, date)) = rows.try_next().await? {
+            hits.entry(date.clone())
+                .and_modify(|h| {
+                    h.count += 1;
+                    h.file_path_count = h.file_path_count.map(|c| c + 1);
+                    h.file_path_hits.as_mut().map(|hits| {
+                        hits.push(SearchHit {
+                            id,
+                            timestamp,
+                        });
+                    });
+                })
+                .or_insert_with(|| {
+                    let mut h = HitsPerDay::default();
+                    h.date = date;
+                    h.count = 1;
+                    h.file_path_count = Some(1);
+                    h.file_path_hits = Some(vec![SearchHit {
+                        id,
+                        timestamp,
+                    }]);
+                    h
+                });
         }
+
+        let mut hits: Vec<HitsPerDay> = hits
+            .into_iter()
+            .map(|(_date, h)| h)
+            .collect();
+        hits.sort_by(|a, b| a.date.cmp(&b.date).reverse());
+
         Ok(hits)
     }
 }

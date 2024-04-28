@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use futures::TryStreamExt;
 use log::debug;
+use serde::Serialize;
 use std::collections::HashMap;
 use tauri::{
     plugin::{self, TauriPlugin},
@@ -15,20 +16,31 @@ use crate::plugins::{
     filelog,
 };
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Serialize)]
 pub struct SearchLogsResult {
     pub hits: Vec<HitsPerDay>,
 }
 
-#[derive(Debug, Default, serde::Serialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct HitsPerDay {
     pub date: String,
-    pub hits: i64,
-    pub application_name: Option<i64>,
-    pub application_title: Option<i64>,
-    pub browser_title: Option<i64>,
-    pub browser_url: Option<i64>,
-    pub file_path: Option<i64>,
+    pub count: i64,
+    pub application_name_count: Option<i64>,
+    pub application_name_hits: Option<Vec<SearchHit>>,
+    pub application_title_count: Option<i64>,
+    pub application_title_hits: Option<Vec<SearchHit>>,
+    pub browser_title_count: Option<i64>,
+    pub browser_title_hits: Option<Vec<SearchHit>>,
+    pub browser_url_count: Option<i64>,
+    pub browser_url_hits: Option<Vec<SearchHit>>,
+    pub file_path_count: Option<i64>,
+    pub file_path_hits: Option<Vec<SearchHit>>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct SearchHit {
+    pub timestamp: i64,
+    pub id: i64,
 }
 
 pub fn init() -> TauriPlugin<Wry> {
@@ -89,14 +101,14 @@ impl SearchPlugin {
             hits
                 .entry(date.clone())
                 .and_modify(|h| {
-                    h.hits += count;
-                    h.application_title = Some(count);
+                    h.count += count;
+                    h.application_title_count = Some(count);
                 })
                 .or_insert_with(|| {
                     let mut h = HitsPerDay::default();
                     h.date = date;
-                    h.hits = count;
-                    h.application_title = Some(count);
+                    h.count = count;
+                    h.application_title_count = Some(count);
                     h
                 });
         }
@@ -127,14 +139,14 @@ impl SearchPlugin {
             hits
                 .entry(date.clone())
                 .and_modify(|h| {
-                    h.hits += count;
-                    h.application_name = Some(count);
+                    h.count += count;
+                    h.application_name_count = Some(count);
                 })
                 .or_insert_with(|| {
                     let mut h = HitsPerDay::default();
                     h.date = date;
-                    h.hits = count;
-                    h.application_name = Some(count);
+                    h.count = count;
+                    h.application_name_count = Some(count);
                     h
                 });
         }
@@ -163,14 +175,14 @@ impl SearchPlugin {
             hits
                 .entry(date.clone())
                 .and_modify(|h| {
-                    h.hits += count;
-                    h.browser_title = Some(count);
+                    h.count += count;
+                    h.browser_title_count = Some(count);
                 })
                 .or_insert_with(|| {
                     let mut h = HitsPerDay::default();
                     h.date = date;
-                    h.hits = count;
-                    h.browser_title = Some(count);
+                    h.count = count;
+                    h.browser_title_count = Some(count);
                     h
                 });
         }
@@ -201,14 +213,14 @@ impl SearchPlugin {
             hits
                 .entry(date.clone())
                 .and_modify(|h| {
-                    h.hits += count;
-                    h.browser_url = Some(count);
+                    h.count += count;
+                    h.browser_url_count = Some(count);
                 })
                 .or_insert_with(|| {
                     let mut h = HitsPerDay::default();
                     h.date = date;
-                    h.hits = count;
-                    h.browser_url = Some(count);
+                    h.count = count;
+                    h.browser_url_count = Some(count);
                     h
                 });
         }
@@ -239,14 +251,14 @@ impl SearchPlugin {
             hits
                 .entry(date.clone())
                 .and_modify(|h| {
-                    h.hits += count;
-                    h.file_path = Some(count);
+                    h.count += count;
+                    h.file_path_count = Some(count);
                 })
                 .or_insert_with(|| {
                     let mut h = HitsPerDay::default();
                     h.date = date;
-                    h.hits = count;
-                    h.file_path = Some(count);
+                    h.count = count;
+                    h.file_path_count = Some(count);
                     h
                 });
         }

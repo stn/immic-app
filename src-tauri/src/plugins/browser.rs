@@ -9,6 +9,7 @@ use chrono::DateTime;
 use futures::TryStreamExt;
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use sqlx::{
     sqlite::Sqlite,
     Pool,
@@ -19,12 +20,20 @@ use tauri::{
 };
 use url::Url;
 
-use crate::{app::event::{emit_event_to_info, ImmicEvent, SearchHit}, plugins::{
-    db::ImmicDb,
-    setting::SettingPlugin,
-}};
-
-use super::db;
+use crate::{
+    app::event::{
+        emit_event_to_info,
+        ImmicEvent,
+    },
+    plugins::{
+        db::{self, ImmicDb},
+        search::{
+            HitsPerDay,
+            SearchHit,
+        },
+        setting::SettingPlugin,
+    },
+};
 
 pub const KIND: &str = "browser";
 const SERVER_PORT_SETTING: &str = "server-port";
@@ -452,17 +461,18 @@ impl BrowserPlugin {
     //     }
     // }
 
-    pub async fn search_for(&self, log: &BrowserLog) -> Result<Vec<SearchHit>> {
+    pub async fn search_for(&self, log: &BrowserLog) -> Result<Vec<HitsPerDay>> {
         let db = self.app.state::<db::ImmicDb>();
         let pool = db.pool().await?;
 
         let mut rows = sqlx::query_as::<_, (
-            i64, i64,
+            i64,
+            i64, String,
         )>(
             r#"
             SELECT
                 b.id,
-                e.timestamp
+                e.timestamp, e.date
             FROM browser_log b
             INNER JOIN event_log e
                 ON b.url_id = ?
@@ -473,17 +483,38 @@ impl BrowserPlugin {
         .bind(log.url_id)
         .fetch(&pool);
 
-        let mut hits = Vec::new();
-        while let Some(row) = rows.try_next().await? {
-            let (
-                id,
-                timestamp,
-            ) = row;
-            hits.push(SearchHit {
-                id,
-                timestamp,
-            });
+        let mut hits: HashMap<String, HitsPerDay> = HashMap::new();
+        while let Some((id, timestamp, date)) = rows.try_next().await? {
+            hits.entry(date.clone())
+                .and_modify(|h| {
+                    h.count += 1;
+                    h.browser_url_count = h.browser_url_count.map(|c| c + 1);
+                    h.browser_title_hits.as_mut().map(|hits| {
+                        hits.push(SearchHit {
+                            id,
+                            timestamp,
+                        });
+                    });
+                })
+                .or_insert_with(|| {
+                    let mut h = HitsPerDay::default();
+                    h.date = date;
+                    h.count = 1;
+                    h.browser_url_count = Some(1);
+                    h.browser_title_hits = Some(vec![SearchHit {
+                        id,
+                        timestamp,
+                    }]);
+                    h
+                });
         }
+
+        let mut hits: Vec<HitsPerDay> = hits
+            .into_iter()
+            .map(|(_date, h)| h)
+            .collect();
+        hits.sort_by(|a, b| a.date.cmp(&b.date).reverse());
+
         Ok(hits)
     }
 

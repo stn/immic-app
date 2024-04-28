@@ -44,18 +44,28 @@ export async function importLogs(filename: string): Promise<void> {
   return await invoke("plugin:immicdb|import_logs", { filename });
 }
 
-export type HitsPerDay = {
-  date: string;
-  hits: number;
-  application_name?: number;
-  application_title?: number;
-  browser_title?: number;
-  browser_url?: number;
-  file_path?: number;
-}
-
 export type SearchLogsResults = {
   hits: HitsPerDay[];
+}
+
+export type HitsPerDay = {
+  date: string;
+  count: number;
+  application_name_count?: number;
+  application_name_hits?: SearchHit[];
+  application_title_count?: number;
+  application_title_hits?: SearchHit[];
+  browser_title_count?: number;
+  browser_title_hits?: SearchHit[];
+  browser_url_count?: number;
+  browser_url_hits?: SearchHit[];
+  file_path_count?: number;
+  file_path_hits?: SearchHit[];
+}
+
+export type SearchHit = {
+  id: number;
+  timestamp: number;
 }
 
 export async function searchLogs(query: string): Promise<SearchLogsResults> {
