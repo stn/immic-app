@@ -31,7 +31,18 @@ function Info() {
         {/* <div>{lastEvent && JSON.stringify(lastEvent, null, 2)}</div> */}
         {events.map((e) => (
           <div key={event_id(e)}>
-            { e.Application && <ApplicationLogItem applicationlog={e.Application} /> }
+            { e.Application && (
+              <div>
+                <ApplicationLogItem applicationlog={e.Application[0]} />
+                <div>
+                  { e.Application[1].map((h) => (
+                    <span key={h.id}>
+                      ({h.id}, {h.timestamp})
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
             { e.Browser && <BrowserLogItem browserlog={e.Browser} /> }
             { e.File && <FileLogItem filelog={e.File} /> }
           </div>
@@ -43,7 +54,7 @@ function Info() {
 
 function event_timestamp(event: ImmicEvent): number {
   if (event.Application) {
-    return event.Application.timestamp;
+    return event.Application[0].timestamp;
   }
   if (event.Browser) {
     return event.Browser.timestamp;
@@ -56,7 +67,7 @@ function event_timestamp(event: ImmicEvent): number {
 
 function event_id(event: ImmicEvent): string {
   if (event.Application) {
-    return `a${event.Application.id}`;
+    return `a${event.Application[0].id}`;
   }
   if (event.Browser) {
     return `b${event.Browser.id}`;

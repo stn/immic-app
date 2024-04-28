@@ -300,7 +300,7 @@ impl FilelogPlugin {
         let timestamp = DateTime::from_timestamp(log.timestamp, 0).context("Invalid timestamp")?;
 
         let db = self.app.state::<db::ImmicDb>();
-        let event_id = db.insert_eventlog_with(pool, &timestamp, KIND).await?;
+        let event_log = db.insert_eventlog_with(pool, &timestamp, KIND).await?;
 
         // file_info by path
         let result = sqlx::query_as::<_, (i64,)>(
@@ -390,7 +390,7 @@ impl FilelogPlugin {
             VALUES (?, ?, ?, ?)
             "#
         )
-        .bind(event_id)
+        .bind(event_log.id)
         .bind(info_id)
         .bind(&log.kind)
         .bind(watch_dir_id)

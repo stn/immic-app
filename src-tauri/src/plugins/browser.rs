@@ -134,7 +134,7 @@ impl BrowserPlugin {
         let timestamp = DateTime::from_timestamp(log.timestamp, 0).context("Invalid timestamp")?;
 
         let db = self.app.state::<ImmicDb>();
-        let event_id = db.insert_eventlog_with(pool, &timestamp, KIND).await?;
+        let event_log = db.insert_eventlog_with(pool, &timestamp, KIND).await?;
 
         let (origin, url, query) = parse_url(&log.url)?;
 
@@ -293,7 +293,7 @@ impl BrowserPlugin {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#
         )
-        .bind(event_id)
+        .bind(event_log.id)
         .bind(origin_id)
         .bind(url_id)
         .bind(query)

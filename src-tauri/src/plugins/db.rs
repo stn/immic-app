@@ -133,12 +133,12 @@ impl ImmicDb {
     //     Ok(())
     // }
 
-    pub async fn insert_eventlog(&self, datetime: &DateTime<Utc>, kind: &str) -> Result<i64> {
+    pub async fn insert_eventlog(&self, datetime: &DateTime<Utc>, kind: &str) -> Result<EventLog> {
         let pool = self.pool().await?;
         self.insert_eventlog_with(&pool, datetime, kind).await
     }
 
-    pub async fn insert_eventlog_with(&self, pool: &Pool<Sqlite>, datetime: &DateTime<Utc>, kind: &str) -> Result<i64> {
+    pub async fn insert_eventlog_with(&self, pool: &Pool<Sqlite>, datetime: &DateTime<Utc>, kind: &str) -> Result<EventLog> {
         // timestamp to date string in local timezone
         let ts = datetime.timestamp();
         let local_time = datetime.with_timezone(&chrono::Local);
@@ -150,10 +150,17 @@ impl ImmicDb {
             "#
         )
         .bind(ts)
-        .bind(date)
+        .bind(&date)
         .bind(kind)
         .execute(pool).await?;
-        Ok(result.last_insert_rowid())
+        let id = result.last_insert_rowid();
+        let event_log = EventLog {
+            id,
+            timestamp: ts,
+            date,
+            kind: kind.to_string(),
+        };
+        Ok(event_log)
     }
 
     // pub async fn update_eventlog_logid(&self, id: i64, log_id: i64) -> Result<()> {
@@ -262,8 +269,8 @@ impl ImmicDb {
             match log {
                 AnyLog::ApplicationLogEntry(log) => {
                     if log.ref_id.is_none() {
-                        let ids = application.insert_application_log_with(&pool, &log).await?;
-                        last_application_log.replace(ids);
+                        let application_log = application.insert_application_log_with(&pool, log).await?;
+                        last_application_log.replace((application_log.id, application_log.info_id.unwrap()));
                     } else {
                         application.insert_application_log_ref_with(&pool, log, &last_application_log).await?;
                     }

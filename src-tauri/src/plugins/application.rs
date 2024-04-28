@@ -24,6 +24,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     app::event::{
         ImmicEvent,
+        SearchHit,
         emit_event_to_info,
     },
     plugins::db,
@@ -50,6 +51,7 @@ pub fn init() -> TauriPlugin<Wry> {
         .invoke_handler(tauri::generate_handler![
             list_application_logs_on,
             // get_application_info,
+            // search_for_title,
         ])
         .setup(|app| {
             debug!("application plugin setup");
@@ -96,6 +98,10 @@ impl ApplicationPlugin {
 
                         let win_info = check_application().await;
 
+                        if win_info.is_none() {
+                            continue;
+                        }
+
                         // check if the last info is the same as the current info
                         if win_info == last_win_info {
                             debug!("check_application: same as last info");
@@ -119,12 +125,12 @@ impl ApplicationPlugin {
                                 continue;
                             }
 
-                            let ids = self_clone.insert_application_log_and_emit(win_info.clone().into()).await;
-                            match ids {
-                                Ok((id, info_id)) => {
+                            let logs = self_clone.insert_application_log_and_emit(win_info.clone().into()).await;
+                            match logs {
+                                Ok(log) => {
                                     last_win_info.replace(win_info);
-                                    last_id = id;
-                                    last_info_id = info_id;
+                                    last_id = log.id;
+                                    last_info_id = log.info_id.unwrap();
                                 },
                                 Err(e) => {
                                     error!("check_application: Error on inserting application_info: {:?}", e);
@@ -184,7 +190,7 @@ impl ApplicationPlugin {
 
         // Insert event_log
         let db = self.app.state::<db::ImmicDb>();
-        let event_id = db.insert_eventlog(&timestamp, KIND).await?;
+        let event_log = db.insert_eventlog(&timestamp, KIND).await?;
 
         let pool = db.pool().await?;
         let result = sqlx::query(
@@ -193,7 +199,7 @@ impl ApplicationPlugin {
             VALUES (?, ?, ?)
             "#
         )
-        .bind(event_id)
+        .bind(event_log.id)
         .bind(info_id)
         .bind(ref_id)
         .execute(&pool)
@@ -203,31 +209,34 @@ impl ApplicationPlugin {
         Ok(log_id)
     }
 
-    async fn insert_application_log_and_emit(&self, application_log: ApplicationLog) -> Result<(i64, i64)> {
-        let result = self.insert_application_log(&application_log).await?;
+    async fn insert_application_log_and_emit(&self, application_log: ApplicationLog) -> Result<ApplicationLog> {
+        let result = self.insert_application_log(application_log).await?;
+
+        // search for title
+        let hits = self.search_for_title(&result).await?;
 
         // send event
-        let event = ImmicEvent::Application(application_log);
+        let event = ImmicEvent::Application(result.clone(), hits);
         emit_event_to_info(&self.app, event).context("Failed to emit event")?;
 
         Ok(result)
     }
 
-    async fn insert_application_log(&self, application_log: &ApplicationLog) -> Result<(i64, i64)> {
+    async fn insert_application_log(&self, application_log: ApplicationLog) -> Result<ApplicationLog> {
         let db = self.app.state::<db::ImmicDb>();
         let pool = db.pool().await?;
 
         self.insert_application_log_with(&pool, application_log).await
     }
 
-    pub async fn insert_application_log_with(&self, pool: &Pool<Sqlite>, log: &ApplicationLog) -> Result<(i64, i64)> {
+    pub async fn insert_application_log_with(&self, pool: &Pool<Sqlite>, log: ApplicationLog) -> Result<ApplicationLog> {
         ensure!(log.ref_id.is_none(), "ref_id must be None");
 
         let timestamp = DateTime::from_timestamp(log.timestamp, 0).context("Invalid timestamp")?;
 
         // Insert event_log
         let db = self.app.state::<db::ImmicDb>();
-        let event_id = db.insert_eventlog_with(pool, &timestamp, KIND).await?;
+        let event_log = db.insert_eventlog_with(pool, &timestamp, KIND).await?;
 
         // Search application_info by path
         let result = sqlx::query_as::<_, (i64,)>(
@@ -265,7 +274,7 @@ impl ApplicationPlugin {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             "#
         )
-        .bind(event_id)
+        .bind(event_log.id)
         .bind(info_id)
         .bind(log.process_id)
         .bind(&log.title)
@@ -277,7 +286,24 @@ impl ApplicationPlugin {
         .await?;
 
         let log_id = result.last_insert_rowid();
-        Ok((log_id, info_id))
+
+        let application_log = ApplicationLog {
+            id: log_id,
+            timestamp: log.timestamp,
+            date: event_log.date,
+            info_id: Some(info_id),
+            path: log.path,
+            name: log.name,
+            process_id: log.process_id,
+            title: log.title,
+            x: log.x,
+            y: log.y,
+            width: log.width,
+            height: log.height,
+            ref_id: log.ref_id,
+        };
+
+        Ok(application_log)
     }
 
     pub async fn insert_application_log_ref_with(&self, pool: &Pool<Sqlite>, log: ApplicationLog, last_ids: &Option<(i64, i64)>) -> Result<i64> {
@@ -290,7 +316,7 @@ impl ApplicationPlugin {
 
         // Insert event_log
         let db = self.app.state::<db::ImmicDb>();
-        let event_id = db.insert_eventlog_with(pool, &timestamp, KIND).await?;
+        let event_log = db.insert_eventlog_with(pool, &timestamp, KIND).await?;
 
         let result = sqlx::query(
             r#"
@@ -298,7 +324,7 @@ impl ApplicationPlugin {
             VALUES (?, ?, ?)
             "#
         )
-        .bind(event_id)
+        .bind(event_log.id)
         .bind(info_id)
         .bind(ref_id)
         .execute(pool)
@@ -315,7 +341,7 @@ impl ApplicationPlugin {
         let mut rows = sqlx::query_as::<_, (
             i64,
             i64, Option<i64>, Option<String>, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>,
-            String, Option<String>,
+            i64, String, Option<String>,
         )>(
             r#"
             SELECT
@@ -328,7 +354,7 @@ impl ApplicationPlugin {
             coalesce(a.width, a0.width) as width,
             coalesce(a.height, a0.height) as height,
             a.ref_id,
-            i.path, i.name
+            i.id, i.path, i.name
             FROM event_log e
             INNER JOIN application_log a ON e.id = a.event_id
             INNER JOIN application_info i ON a.info_id = i.id
@@ -346,12 +372,13 @@ impl ApplicationPlugin {
             let (
                 timestamp,
                 id, process_id, title, x, y, width, height, ref_id,
-                path, name,
+                info_id, path, name,
             ) = row;
             application_logs.push(ApplicationLog {
                 id,
                 timestamp,
                 date: date.to_string(),
+                info_id: Some(info_id),
                 path,
                 name,
                 process_id,
@@ -395,6 +422,44 @@ impl ApplicationPlugin {
     //         }
     //     }
     // }
+
+    pub async fn search_for_title(&self, log: &ApplicationLog) -> Result<Vec<SearchHit>> {
+        let db = self.app.state::<db::ImmicDb>();
+        let pool = db.pool().await?;
+
+        let mut rows = sqlx::query_as::<_, (
+            i64, i64,
+        )>(
+            r#"
+            SELECT
+                a.id,
+                e.timestamp
+            FROM application_log a
+            INNER JOIN event_log e
+                ON a.info_id = ?
+                AND a.title = ?
+                AND a.event_id = e.id
+            ORDER BY e.timestamp
+            "#
+        )
+        .bind(log.info_id)
+        .bind(&log.title)
+        .fetch(&pool);
+
+        let mut hits = Vec::new();
+        while let Some(row) = rows.try_next().await? {
+            let (
+                id,
+                timestamp,
+            ) = row;
+            hits.push(SearchHit {
+                id,
+                timestamp,
+            });
+        }
+        Ok(hits)
+    }
+
 }
 
 #[derive(Clone,Debug,PartialEq)]
@@ -440,6 +505,7 @@ pub struct ApplicationLog {
     pub id: i64,
     pub timestamp: i64,
     pub date: String,
+    pub info_id: Option<i64>,
     pub path: String,
     pub name: Option<String>,
     pub process_id: Option<i64>,
@@ -457,6 +523,7 @@ impl From<WinInfo> for ApplicationLog {
             id: 0,  // dummy
             timestamp: Utc::now().timestamp(),
             date: "".to_string(), // dummy
+            info_id: None,
             path: win_info.path,
             name: Some(win_info.name),
             process_id: Some(win_info.process_id),
@@ -491,4 +558,9 @@ pub async fn list_application_logs_on(application: State<'_, ApplicationPlugin>,
 // #[tauri::command]
 // pub async fn get_application_info(application: State<'_, ApplicationPlugin>, app_id: i64) -> Result<ApplicationInfo, String> {
 //     application.get_application_info(app_id).await.map_err(|e| e.to_string())
+// }
+
+// #[tauri::command]
+// pub async fn search_for_title(application: State<'_, ApplicationPlugin>, log: ApplicationLog) -> Result<Vec<SearchHit>, String> {
+//     application.search_for_title(&log).await.map_err(|e| e.to_string())
 // }

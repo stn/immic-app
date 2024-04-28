@@ -143,7 +143,7 @@ impl ScreenshotPlugin {
 
     async fn insert_screenshot(&self, screenshot: Screenshot) -> Result<i64> {
         let db = self.app.state::<db::ImmicDb>();
-        let event_id = db.insert_eventlog(&screenshot.timestamp, KIND).await?;
+        let event_log = db.insert_eventlog(&screenshot.timestamp, KIND).await?;
 
         let pool = db.pool().await?;
         let result = sqlx::query(
@@ -152,7 +152,7 @@ impl ScreenshotPlugin {
             VALUES (?, ?)
             "#
         )
-        .bind(event_id)
+        .bind(event_log.id)
         .bind(screenshot.monitor)
         .execute(&pool)
         .await?;
@@ -173,7 +173,7 @@ impl ScreenshotPlugin {
         let timestamp = DateTime::from_timestamp(log.timestamp, 0).context("Invalid timestamp")?;
 
         let db = self.app.state::<db::ImmicDb>();
-        let event_id = db.insert_eventlog_with(pool, &timestamp, KIND).await?;
+        let event_log = db.insert_eventlog_with(pool, &timestamp, KIND).await?;
 
         let result = sqlx::query(
             r#"
@@ -181,7 +181,7 @@ impl ScreenshotPlugin {
             VALUES (?, ?)
             "#
         )
-        .bind(event_id)
+        .bind(event_log.id)
         .bind(log.monitor_id)
         .execute(pool)
         .await?;
