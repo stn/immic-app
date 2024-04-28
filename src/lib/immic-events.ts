@@ -18,7 +18,7 @@ export type SearchHit = {
 }
 
 export type ImmicEvent = {
-    Application?: [ApplicationLog, SearchHit[]];
+    Application?: [ApplicationLog, HitsPerDay[]];
     Browser?: [BrowserLog, HitsPerDay[]];
     File?: [FileLog, SearchHit[]];
 };

@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use serde::Serialize;
-use std::collections::HashMap;
 use tauri::{AppHandle, Manager};
 
 use crate::plugins::{
@@ -19,7 +18,7 @@ const EVENT_LABEL: &str = "immic-event";
 
 #[derive(Clone, Debug, Serialize)]
 pub enum ImmicEvent {
-    Application(ApplicationLog, Vec<SearchHit>),
+    Application(ApplicationLog, Vec<HitsPerDay>),
     Browser(BrowserLog, Vec<HitsPerDay>),
     File(FileLog, Vec<SearchHit>),
 }

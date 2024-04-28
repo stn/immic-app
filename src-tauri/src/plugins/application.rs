@@ -6,7 +6,7 @@ use log::{error,debug};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashSet,
+    collections::{HashSet, HashMap},
     path::MAIN_SEPARATOR,
     sync::{Arc, Mutex},
 };
@@ -28,7 +28,7 @@ use crate::{
     },
     plugins::{
         db,
-        search::SearchHit,
+        search::{HitsPerDay, SearchHit},
     },
 };
 
@@ -425,17 +425,18 @@ impl ApplicationPlugin {
     //     }
     // }
 
-    pub async fn search_for_title(&self, log: &ApplicationLog) -> Result<Vec<SearchHit>> {
+    pub async fn search_for_title(&self, log: &ApplicationLog) -> Result<Vec<HitsPerDay>> {
         let db = self.app.state::<db::ImmicDb>();
         let pool = db.pool().await?;
 
         let mut rows = sqlx::query_as::<_, (
-            i64, i64,
+            i64,
+            i64, String,
         )>(
             r#"
             SELECT
                 a.id,
-                e.timestamp
+                e.timestamp, e.date
             FROM application_log a
             INNER JOIN event_log e
                 ON a.info_id = ?
@@ -448,17 +449,38 @@ impl ApplicationPlugin {
         .bind(&log.title)
         .fetch(&pool);
 
-        let mut hits = Vec::new();
-        while let Some(row) = rows.try_next().await? {
-            let (
-                id,
-                timestamp,
-            ) = row;
-            hits.push(SearchHit {
-                id,
-                timestamp,
-            });
+        let mut hits: HashMap<String, HitsPerDay> = HashMap::new();
+        while let Some((id, timestamp, date)) = rows.try_next().await? {
+            hits.entry(date.clone())
+                .and_modify(|h| {
+                    h.count += 1;
+                    h.application_title_count = h.application_title_count.map(|c| c + 1);
+                    h.application_title_hits.as_mut().map(|hits| {
+                        hits.push(SearchHit {
+                            id,
+                            timestamp,
+                        });
+                    });
+                })
+                .or_insert_with(|| {
+                    let mut h = HitsPerDay::default();
+                    h.date = date;
+                    h.count = 1;
+                    h.application_title_count = Some(1);
+                    h.application_title_hits = Some(vec![SearchHit {
+                        id,
+                        timestamp,
+                    }]);
+                    h
+                });
         }
+
+        let mut hits: Vec<HitsPerDay> = hits
+            .into_iter()
+            .map(|(_date, h)| h)
+            .collect();
+        hits.sort_by(|a, b| a.date.cmp(&b.date).reverse());
+
         Ok(hits)
     }
 

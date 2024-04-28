@@ -34,10 +34,10 @@ function Info() {
               <div>
                 <ApplicationLogItem applicationlog={e.Application[0]} />
                 <div>
-                  { e.Application[1].map((h) => (
-                    <span key={h.id}>
-                      ({h.id}, {h.timestamp})
-                    </span>
+                  { e.Application[1].map((hitsPerDay) => (
+                    <div key={hitsPerDay.date}>
+                      {hitsPerDay.date} ({hitsPerDay.application_title_count})
+                    </div>
                   ))}
                 </div>
               </div>
