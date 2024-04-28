@@ -1,11 +1,16 @@
 use anyhow::{Context, Result};
 use serde::Serialize;
+use std::collections::HashMap;
 use tauri::{AppHandle, Manager};
 
 use crate::plugins::{
     application::ApplicationLog,
     browser::BrowserLog,
     filelog::FileLog,
+    search::{
+        SearchHit,
+        HitsPerDay,
+    },
 };
 
 // use super::window::show_info;
@@ -13,15 +18,9 @@ use crate::plugins::{
 const EVENT_LABEL: &str = "immic-event";
 
 #[derive(Clone, Debug, Serialize)]
-pub struct SearchHit {
-    pub timestamp: i64,
-    pub id: i64,
-}
-
-#[derive(Clone, Debug, Serialize)]
 pub enum ImmicEvent {
     Application(ApplicationLog, Vec<SearchHit>),
-    Browser(BrowserLog, Vec<SearchHit>),
+    Browser(BrowserLog, Vec<HitsPerDay>),
     File(FileLog, Vec<SearchHit>),
 }
 

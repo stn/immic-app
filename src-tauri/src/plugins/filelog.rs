@@ -37,10 +37,10 @@ use crate::{
     app::event::{
         emit_event_to_info,
         ImmicEvent,
-        SearchHit,
     },
     plugins::{
         db,
+        search::SearchHit,
         setting::SettingPlugin,
     },
 };

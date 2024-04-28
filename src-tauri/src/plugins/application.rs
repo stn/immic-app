@@ -24,10 +24,12 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     app::event::{
         ImmicEvent,
-        SearchHit,
         emit_event_to_info,
     },
-    plugins::db,
+    plugins::{
+        db,
+        search::SearchHit,
+    },
 };
 
 pub const KIND: &str = "application";

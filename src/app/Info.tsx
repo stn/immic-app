@@ -46,10 +46,10 @@ function Info() {
               <div>
                 <BrowserLogItem browserlog={e.Browser[0]} />
                 <div>
-                  { e.Browser[1].map((h) => (
-                    <span key={h.id}>
-                      ({h.id}, {h.timestamp})
-                    </span>
+                  { e.Browser[1].map((hitsPerDay) => (
+                    <div key={hitsPerDay.date}>
+                      {hitsPerDay.date} ({hitsPerDay.browser_url_count})
+                    </div>
                   ))}
                 </div>
               </div>

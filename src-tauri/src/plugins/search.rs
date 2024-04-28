@@ -21,15 +21,20 @@ pub struct SearchLogsResult {
     pub hits: Vec<HitsPerDay>,
 }
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct HitsPerDay {
     pub date: String,
     pub count: i64,
     pub application_name_count: Option<i64>,
+    pub application_name_hits: Option<Vec<SearchHit>>,
     pub application_title_count: Option<i64>,
+    pub application_title_hits: Option<Vec<SearchHit>>,
     pub browser_title_count: Option<i64>,
+    pub browser_title_hits: Option<Vec<SearchHit>>,
     pub browser_url_count: Option<i64>,
+    pub browser_url_hits: Option<Vec<SearchHit>>,
     pub file_path_count: Option<i64>,
+    pub file_path_hits: Option<Vec<SearchHit>>,
 }
 
 #[derive(Clone, Debug, Serialize)]
