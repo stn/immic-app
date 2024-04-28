@@ -12,9 +12,15 @@ use crate::plugins::{
 
 const EVENT_LABEL: &str = "immic-event";
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
+pub struct SearchHit {
+    pub timestamp: i64,
+    pub id: i64,
+}
+
+#[derive(Clone, Debug, Serialize)]
 pub enum ImmicEvent {
-    Application(ApplicationLog),
+    Application(ApplicationLog, Vec<SearchHit>),
     Browser(BrowserLog),
     File(FileLog),
 }

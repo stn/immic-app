@@ -11,8 +11,13 @@ type TEvent = {
     payload: ImmicEvent;
 };
 
+export type SearchHit = {
+  id: number;
+  timestamp: number;
+}
+
 export type ImmicEvent = {
-    Application?: ApplicationLog;
+    Application?: [ApplicationLog, SearchHit[]];
     Browser?: BrowserLog;
     File?: FileLog;
 };
