@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use serde::{Serialize};
+use serde::Serialize;
 use tauri::{AppHandle, Manager};
 
 use crate::plugins::{

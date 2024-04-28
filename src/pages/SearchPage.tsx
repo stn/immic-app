@@ -32,14 +32,14 @@ export function SearchPage(_props: SearchPageProps) {
                   {dateToPath(hit.date)}
                 </span>
               </Link>
-              <span className="">({hit.hits} hits)</span>
+              <span className="">({hit.count} hits)</span>
             </div>
             <ul>
-              { hit.application_name && <li>Application Name: {hit.application_name}</li> }
-              { hit.application_title && <li>Application Title: {hit.application_title}</li> }
-              { hit.browser_title && <li>Browser Title: {hit.browser_title}</li> }
-              { hit.browser_url && <li>Browser URL: {hit.browser_url}</li> }
-              { hit.file_path && <li>File Path: {hit.file_path}</li> }
+              { hit.application_name_count && <li>Application Name: {hit.application_name_count}</li> }
+              { hit.application_title_count && <li>Application Title: {hit.application_title_count}</li> }
+              { hit.browser_title_count && <li>Browser Title: {hit.browser_title_count}</li> }
+              { hit.browser_url_count && <li>Browser URL: {hit.browser_url_count}</li> }
+              { hit.file_path_count && <li>File Path: {hit.file_path_count}</li> }
             </ul>
           </div>
         ))

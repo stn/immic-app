@@ -46,12 +46,12 @@ export async function importLogs(filename: string): Promise<void> {
 
 export type HitsPerDay = {
   date: string;
-  hits: number;
-  application_name?: number;
-  application_title?: number;
-  browser_title?: number;
-  browser_url?: number;
-  file_path?: number;
+  count: number;
+  application_name_count?: number;
+  application_title_count?: number;
+  browser_title_count?: number;
+  browser_url_count?: number;
+  file_path_count?: number;
 }
 
 export type SearchLogsResults = {
