@@ -19,7 +19,7 @@ use tauri::{
 };
 use url::Url;
 
-use crate::{app::event::{emit_event_to_info, ImmicEvent}, plugins::{
+use crate::{app::event::{emit_event_to_info, ImmicEvent, SearchHit}, plugins::{
     db::ImmicDb,
     setting::SettingPlugin,
 }};
@@ -85,22 +85,25 @@ impl BrowserPlugin {
     //     Ok(Some(id))
     // }
 
-    async fn maybe_insert_browser_log_and_emit(&self, log: BrowserLog) -> Result<Option<i64>> {
+    async fn maybe_insert_browser_log_and_emit(&self, log: BrowserLog) -> Result<Option<BrowserLog>> {
         if self.check_debounce(&log).await? {
             debug!("browsers: debounced!");
             return Ok(None);
         }
 
-        let id = self.insert_browser_log(&log).await?;
+        let result = self.insert_browser_log(log).await?;
+
+        // search for the result
+        let hits = self.search_for(&result).await?;
 
         // send an event
-        let event = ImmicEvent::Browser(log);
+        let event = ImmicEvent::Browser(result.clone(), hits);
         emit_event_to_info(&self.app, event).context("Failed to emit event")?;
 
-        Ok(Some(id))
+        Ok(Some(result))
     }
 
-    async fn insert_browser_log(&self, log: &BrowserLog) -> Result<i64> {
+    async fn insert_browser_log(&self, log: BrowserLog) -> Result<BrowserLog> {
         let db = self.app.state::<ImmicDb>();
         let pool = db.pool().await.context("db pool is not set")?;
 
@@ -130,7 +133,7 @@ impl BrowserPlugin {
     //     self.insert_browser_log_with(&pool, browser_log).await
     // }
 
-    pub async fn insert_browser_log_with(&self, pool: &Pool<Sqlite>, log: &BrowserLog) -> Result<i64> {
+    pub async fn insert_browser_log_with(&self, pool: &Pool<Sqlite>, log: BrowserLog) -> Result<BrowserLog> {
         let timestamp = DateTime::from_timestamp(log.timestamp, 0).context("Invalid timestamp")?;
 
         let db = self.app.state::<ImmicDb>();
@@ -307,7 +310,21 @@ impl BrowserPlugin {
 
         let log_id = result.last_insert_rowid();
 
-        Ok(log_id)
+        let browser_log = BrowserLog {
+            id: log_id,
+            timestamp: log.timestamp,
+            date: event_log.date,
+            url_id,
+            url,
+            title: log.title,
+            fav_icon_url: log.fav_icon_url,
+            referrer: log.referrer,
+            tab_id: log.tab_id,
+            opener_tab_id: log.opener_tab_id,
+            window_id: log.window_id,
+        };
+
+        Ok(browser_log)
     }
 
     async fn check_debounce(&self, log: &BrowserLog) -> Result<bool> {
@@ -346,7 +363,7 @@ impl BrowserPlugin {
             i64,
             i64, Option<String>, Option<String>, Option<i64>, Option<i64>, Option<i64>,
             Option<String>,
-            String,
+            i64, String,
             Option<String>,
         )>(
             r#"
@@ -354,7 +371,7 @@ impl BrowserPlugin {
             e.timestamp,
             b.id, b.url_query, b.title, b.tab_id, b.opener_tab_id, b.window_id,
             o.fav_icon_url,
-            u.url,
+            u.id, u.url,
             r.url
             FROM event_log e
             INNER JOIN browser_log b ON e.id = b.event_id
@@ -375,7 +392,7 @@ impl BrowserPlugin {
                 timestamp,
                 id, url_query, title, tab_id, opener_tab_id, window_id,
                 fav_icon_url,
-                url,
+                url_id, url,
                 referrer,
             ) = row;
             let url = match url_query {
@@ -392,6 +409,7 @@ impl BrowserPlugin {
                 id,
                 timestamp,
                 date: date.to_string(),
+                url_id,
                 url,
                 title,
                 fav_icon_url,
@@ -433,6 +451,42 @@ impl BrowserPlugin {
     //         Err(e) => Err(anyhow!("Not found: {}", e)),
     //     }
     // }
+
+    pub async fn search_for(&self, log: &BrowserLog) -> Result<Vec<SearchHit>> {
+        let db = self.app.state::<db::ImmicDb>();
+        let pool = db.pool().await?;
+
+        let mut rows = sqlx::query_as::<_, (
+            i64, i64,
+        )>(
+            r#"
+            SELECT
+                b.id,
+                e.timestamp
+            FROM browser_log b
+            INNER JOIN event_log e
+                ON b.url_id = ?
+                AND b.event_id = e.id
+            ORDER BY e.timestamp
+            "#
+        )
+        .bind(log.url_id)
+        .fetch(&pool);
+
+        let mut hits = Vec::new();
+        while let Some(row) = rows.try_next().await? {
+            let (
+                id,
+                timestamp,
+            ) = row;
+            hits.push(SearchHit {
+                id,
+                timestamp,
+            });
+        }
+        Ok(hits)
+    }
+
 }
 
 #[derive(Debug, PartialEq, Deserialize)]
@@ -465,6 +519,7 @@ pub async fn browserlog(tab_info: web::Json<TabInfo>, data: web::Data<AppHandle>
         id: 0,  // dummy
         timestamp: timestamp.unwrap().timestamp(),
         date: "".to_string(),  // dummy
+        url_id: 0,  // dummy
         url: tab_info.url.clone().unwrap(),
         title: tab_info.title.clone(),
         fav_icon_url: tab_info.favIconUrl.clone(),
@@ -488,6 +543,7 @@ pub struct BrowserLog {
     pub id: i64,
     pub timestamp: i64,
     pub date: String,
+    pub url_id: i64,
     pub url: String,
     pub title: Option<String>,
     pub fav_icon_url: Option<String>,
