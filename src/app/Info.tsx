@@ -58,10 +58,10 @@ function Info() {
               <div>
                 <FileLogItem filelog={e.File[0]} />
                 <div>
-                  { e.File[1].map((h) => (
-                    <span key={h.id}>
-                      ({h.id}, {h.timestamp})
-                    </span>
+                  { e.File[1].map((hitsPerDay) => (
+                    <div key={hitsPerDay.date}>
+                      {hitsPerDay.date} ({hitsPerDay.file_path_count})
+                    </div>
                   ))}
                 </div>
               </div>

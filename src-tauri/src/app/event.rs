@@ -6,10 +6,7 @@ use crate::plugins::{
     application::ApplicationLog,
     browser::BrowserLog,
     filelog::FileLog,
-    search::{
-        SearchHit,
-        HitsPerDay,
-    },
+    search::HitsPerDay,
 };
 
 // use super::window::show_info;
@@ -20,7 +17,7 @@ const EVENT_LABEL: &str = "immic-event";
 pub enum ImmicEvent {
     Application(ApplicationLog, Vec<HitsPerDay>),
     Browser(BrowserLog, Vec<HitsPerDay>),
-    File(FileLog, Vec<SearchHit>),
+    File(FileLog, Vec<HitsPerDay>),
 }
 
 pub fn emit_event(app: &AppHandle, event: ImmicEvent) -> Result<()> {
