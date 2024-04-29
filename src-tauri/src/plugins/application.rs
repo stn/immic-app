@@ -291,6 +291,7 @@ impl ApplicationPlugin {
 
         let application_log = ApplicationLog {
             id: log_id,
+            event_id: event_log.id,
             timestamp: log.timestamp,
             date: event_log.date,
             info_id: Some(info_id),
@@ -341,13 +342,13 @@ impl ApplicationPlugin {
         let pool = db.pool().await?;
 
         let mut rows = sqlx::query_as::<_, (
-            i64,
+            i64, i64,
             i64, Option<i64>, Option<String>, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>,
             i64, String, Option<String>,
         )>(
             r#"
             SELECT
-            e.timestamp,
+            e.id, e.timestamp,
             a.id,
             coalesce(a.process_id, a0.process_id) as process_id,
             coalesce(a.title, a0.title) as title,
@@ -372,12 +373,13 @@ impl ApplicationPlugin {
         let mut application_logs = Vec::new();
         while let Some(row) = rows.try_next().await? {
             let (
-                timestamp,
+                event_id, timestamp,
                 id, process_id, title, x, y, width, height, ref_id,
                 info_id, path, name,
             ) = row;
             application_logs.push(ApplicationLog {
                 id,
+                event_id,
                 timestamp,
                 date: date.to_string(),
                 info_id: Some(info_id),
@@ -527,6 +529,7 @@ async fn check_application() -> Option<WinInfo> {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApplicationLog {
     pub id: i64,
+    pub event_id: i64,
     pub timestamp: i64,
     pub date: String,
     pub info_id: Option<i64>,
@@ -545,6 +548,7 @@ impl From<WinInfo> for ApplicationLog {
     fn from(win_info: WinInfo) -> Self {
         ApplicationLog {
             id: 0,  // dummy
+            event_id: 0,  // dummy
             timestamp: Utc::now().timestamp(),
             date: "".to_string(), // dummy
             info_id: None,
