@@ -61,7 +61,8 @@
         "fullscreen": false,
         "resizable": true,
         "width": 2200,
-        "height": 900
+        "height": 900,
+        "visible": false
       },
       {
         "label": "info",
