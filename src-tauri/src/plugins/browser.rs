@@ -321,6 +321,7 @@ impl BrowserPlugin {
 
         let browser_log = BrowserLog {
             id: log_id,
+            event_id: event_log.id,
             timestamp: log.timestamp,
             date: event_log.date,
             url_id,
@@ -369,7 +370,7 @@ impl BrowserPlugin {
         let pool = db.pool().await.context("db pool is not set")?;
 
         let mut rows = sqlx::query_as::<_, (
-            i64,
+            i64, i64,
             i64, Option<String>, Option<String>, Option<i64>, Option<i64>, Option<i64>,
             Option<String>,
             i64, String,
@@ -377,7 +378,7 @@ impl BrowserPlugin {
         )>(
             r#"
             SELECT
-            e.timestamp,
+            e.id, e.timestamp,
             b.id, b.url_query, b.title, b.tab_id, b.opener_tab_id, b.window_id,
             o.fav_icon_url,
             u.id, u.url,
@@ -398,7 +399,7 @@ impl BrowserPlugin {
         let mut browserlogs = Vec::new();
         while let Some(row) = rows.try_next().await? {
             let (
-                timestamp,
+                event_id, timestamp,
                 id, url_query, title, tab_id, opener_tab_id, window_id,
                 fav_icon_url,
                 url_id, url,
@@ -416,6 +417,7 @@ impl BrowserPlugin {
             };
             browserlogs.push(BrowserLog {
                 id,
+                event_id,
                 timestamp,
                 date: date.to_string(),
                 url_id,
@@ -548,6 +550,7 @@ pub async fn browserlog(tab_info: web::Json<TabInfo>, data: web::Data<AppHandle>
 
     let browser_log = BrowserLog {
         id: 0,  // dummy
+        event_id: 0,  // dummy
         timestamp: timestamp.unwrap().timestamp(),
         date: "".to_string(),  // dummy
         url_id: 0,  // dummy
@@ -572,6 +575,7 @@ pub async fn browserlog(tab_info: web::Json<TabInfo>, data: web::Data<AppHandle>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BrowserLog {
     pub id: i64,
+    pub event_id: i64,
     pub timestamp: i64,
     pub date: String,
     pub url_id: i64,

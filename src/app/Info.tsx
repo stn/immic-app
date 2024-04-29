@@ -29,10 +29,12 @@ function Info() {
   useEffect(() => {
     if (event) {
       // console.log("event", event);
-      const now = new Date().getTime() / 1000.0;
-      let new_events = [event, ...events];
-      new_events = new_events.filter((e) => (now - event_timestamp(e)) < 60); // TODO setting
-      setEvents(new_events);
+      if (event.Application || event.Browser || event.File) {
+        const now = new Date().getTime() / 1000.0;
+        let new_events = [event, ...events];
+        new_events = new_events.filter((e) => (now - event_timestamp(e)) < 60); // TODO setting
+        setEvents(new_events);
+      }
     }
   }, [event]);
 
@@ -67,8 +69,6 @@ function Info() {
 }
 
 function HitsPerDays({ hitsPerDays, item }: { hitsPerDays: HitsPerDay[], item: keyof HitsPerDay}) {
-  const hits = hitsPerDays[0][item] || [];
-
   return (
     <Accordion
       type="single"
@@ -108,13 +108,13 @@ function event_timestamp(event: ImmicEvent): number {
 
 function event_id(event: ImmicEvent): string {
   if (event.Application) {
-    return `a${event.Application[0].id}`;
+    return `a${event.Application[0].event_id}`;
   }
   if (event.Browser) {
-    return `b${event.Browser[0].id}`;
+    return `b${event.Browser[0].event_id}`;
   }
   if (event.File) {
-    return `f${event.File[0].id}`;
+    return `f${event.File[0].event_id}`;
   }
   return "unknown";
 }

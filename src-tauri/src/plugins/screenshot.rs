@@ -195,12 +195,12 @@ impl ScreenshotPlugin {
         let pool = db.pool().await?;
 
         let mut rows = sqlx::query_as::<_, (
-            i64,
+            i64, i64,
             i64, i64
         )>(
             r#"
             SELECT
-            e.timestamp,
+            e.id, e.timestamp,
             s.id, s.monitor_id
             FROM event_log e
             INNER JOIN screenshot s ON e.id = s.event_id
@@ -215,11 +215,12 @@ impl ScreenshotPlugin {
         let mut screenshot_logs = Vec::new();
         while let Some(row) = rows.try_next().await? {
             let (
-                timestamp,
+                event_id, timestamp,
                 id, monitor_id,
             ) = row;
             screenshot_logs.push(ScreenshotLog {
                 id,
+                event_id,
                 timestamp,
                 date: date.to_string(),
                 monitor_id,
@@ -323,6 +324,7 @@ struct Screenshot {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ScreenshotLog {
     pub id: i64,
+    pub event_id: i64,
     pub timestamp: i64,
     pub date: String,
     pub monitor_id: i64,
