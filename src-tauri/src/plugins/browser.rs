@@ -489,7 +489,7 @@ impl BrowserPlugin {
                 .and_modify(|h| {
                     h.count += 1;
                     h.browser_url_count = h.browser_url_count.map(|c| c + 1);
-                    h.browser_title_hits.as_mut().map(|hits| {
+                    h.browser_url_hits.as_mut().map(|hits| {
                         hits.push(SearchHit {
                             id,
                             timestamp,
@@ -501,7 +501,7 @@ impl BrowserPlugin {
                     h.date = date;
                     h.count = 1;
                     h.browser_url_count = Some(1);
-                    h.browser_title_hits = Some(vec![SearchHit {
+                    h.browser_url_hits = Some(vec![SearchHit {
                         id,
                         timestamp,
                     }]);

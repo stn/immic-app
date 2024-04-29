@@ -2,11 +2,22 @@ import { useEffect, useState } from "react";
 import { useKey } from "react-use";
 import { appWindow } from '@tauri-apps/api/window';
 
-import { ImmicEvent, useTauriEvent } from "@/lib/immic-events";
+import { Label } from "@/components/ui/label";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion"
+
 import { ThemeProvider } from "@/components/theme-provider";
 import { ApplicationLogItem } from "@/components/elements/ApplicationLogItem";
 import { BrowserLogItem } from "@/components/elements/BrowserLogItem";
 import { FileLogItem } from "@/components/elements/FilelogItem";
+
+import { HitsPerDay, SearchHit } from "@/lib/api";
+import { ImmicEvent, useTauriEvent } from "@/lib/immic-events";
+import { timestamp_hhmm, timestamp_yyyymmss } from "@/lib/utils";
 
 
 function Info() {
@@ -33,43 +44,52 @@ function Info() {
             { e.Application && (
               <div>
                 <ApplicationLogItem applicationlog={e.Application[0]} />
-                <div>
-                  { e.Application[1].map((hitsPerDay) => (
-                    <div key={hitsPerDay.date}>
-                      {hitsPerDay.date} ({hitsPerDay.application_title_count})
-                    </div>
-                  ))}
-                </div>
+                <HitsPerDays hitsPerDays={e.Application[1]} item="application_title_hits" />
               </div>
             )}
             { e.Browser && (
               <div>
                 <BrowserLogItem browserlog={e.Browser[0]} />
-                <div>
-                  { e.Browser[1].map((hitsPerDay) => (
-                    <div key={hitsPerDay.date}>
-                      {hitsPerDay.date} ({hitsPerDay.browser_url_count})
-                    </div>
-                  ))}
-                </div>
+                <HitsPerDays hitsPerDays={e.Browser[1]} item="browser_url_hits" />
               </div>
             )}
             { e.File && (
               <div>
                 <FileLogItem filelog={e.File[0]} />
-                <div>
-                  { e.File[1].map((hitsPerDay) => (
-                    <div key={hitsPerDay.date}>
-                      {hitsPerDay.date} ({hitsPerDay.file_path_count})
-                    </div>
-                  ))}
-                </div>
+                <HitsPerDays hitsPerDays={e.File[1]} item="file_path_hits" />
               </div>
             )}
           </div>
         ))}
       </div>
     </ThemeProvider>
+  );
+}
+
+function HitsPerDays({ hitsPerDays, item }: { hitsPerDays: HitsPerDay[], item: keyof HitsPerDay}) {
+  const hits = hitsPerDays[0][item] || [];
+
+  return (
+    <Accordion
+      type="single"
+      collapsible
+      className="ml-16"
+    >
+      { hitsPerDays.map((hitsPerDay) => (
+        <AccordionItem value={hitsPerDay.date}>
+          <AccordionTrigger className="py-1">
+            {timestamp_yyyymmss((hitsPerDay[item] as SearchHit[])[0].timestamp)}
+          </AccordionTrigger>
+          <AccordionContent className="pl-4 flex flex-wrap">
+            {(hitsPerDay[item] as SearchHit[]).map((hit: { timestamp: number; }, i: number) => (
+              <Label key={i} className="ml-2 mt-1">
+                {timestamp_hhmm(hit.timestamp)}
+              </Label>
+            ))}
+          </AccordionContent>
+        </AccordionItem>
+      ))}
+    </Accordion>
   );
 }
 
