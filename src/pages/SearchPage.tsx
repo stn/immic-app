@@ -10,13 +10,12 @@ import {
 } from "@/components/ui/accordion"
 
 import {
-  HitsPerDay,
   SearchHit,
   SearchLogsResults,
   searchLogs,
   openHourly,
 } from "@/lib/api";
-import { timestamp_hhmm, timestamp_yyyymmss } from "@/lib/utils";
+import { timestamp_hhmm } from "@/lib/utils";
 
 export interface SearchPageProps {
 }
