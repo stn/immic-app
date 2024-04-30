@@ -4,14 +4,15 @@ import { useForm, SubmitHandler } from "react-hook-form";
 
 import * as GS from "@tauri-apps/api/globalShortcut";
 
-import { Settings } from "lucide-react";
-import { Input } from "@/components/ui/input"
-
 import {
   settingGet,
   settingLoad,
   showMain,
 } from "@/lib/api";
+import { useTauriEvent } from "@/lib/immic-events";
+
+import { Settings } from "lucide-react";
+import { Input } from "@/components/ui/input"
 
 type SearchInputs = {
   query: string;
@@ -19,6 +20,7 @@ type SearchInputs = {
 
 function MainPanel() {
   const navigate = useNavigate();
+  const event = useTauriEvent();
 
   const [dataDir, setDataDir] = useState("");
   const [globalShortcut, setGlobalShortcut] = useState<string>();
@@ -67,6 +69,14 @@ function MainPanel() {
     };
   }, []);
 
+  useEffect(() => {
+    if (event?.OpenHourly) {
+      console.log(event);
+      const [year, month, day] = timestamp_yyyymmdd(event.OpenHourly);
+      navigate(`/${year}/${month}/${day}`);
+    }
+  }, [event]);
+
   return (
     <>
       <header className="sticky top-0 h-16 items-center bg-transparent px-4 z-30">
@@ -96,6 +106,15 @@ function MainPanel() {
       </main>
     </>
   );
+}
+
+function timestamp_yyyymmdd(timestamp: number): [string, string, string] {
+  const d = new Date(timestamp * 1000);
+  return [
+    d.getFullYear().toString(),
+    (d.getMonth() + 1).toString().padStart(2, "0"),
+    d.getDate().toString().padStart(2, "0")
+  ];
 }
 
 export default MainPanel;

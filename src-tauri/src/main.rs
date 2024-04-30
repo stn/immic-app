@@ -46,6 +46,7 @@ async fn main() {
         .invoke_handler(tauri::generate_handler![
             app::quit_app,
             app::restart_app,
+            app::event::open_hourly_cmd,
             app::window::show_main_cmd,
         ])
         .setup(|app| {
