@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use futures::TryStreamExt;
 use log::debug;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -10,10 +9,10 @@ use tauri::{
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::plugins::{
-    application,
-    browser,
+    application::ApplicationPlugin,
+    browser::BrowserPlugin,
     db::ImmicDb,
-    filelog,
+    filelog::FilelogPlugin,
 };
 
 #[derive(Debug, Serialize)]
@@ -41,6 +40,7 @@ pub struct HitsPerDay {
 pub struct SearchHit {
     pub timestamp: i64,
     pub id: i64,
+    pub text: Option<String>,
 }
 
 pub fn init() -> TauriPlugin<Wry> {
@@ -77,190 +77,70 @@ impl SearchPlugin {
         let query = format!("%{}%", tokenize_query(query).join("%"));
         debug!("search_logs: query={}", query);
 
-        // application title
-        let mut rows = sqlx::query_as::<_, (
-            String, i64,
-        )>(
-            r#"
-            SELECT
-            e.date, COUNT(e.id) AS count
-            FROM event_log e
-            INNER JOIN application_log a
-                ON e.kind = ?
-                AND e.id = a.event_id
-                AND a.title LIKE ?
-            GROUP BY e.date
-            ORDER BY e.date
-            "#
-        )
-        .bind(application::KIND)
-        .bind(&query)
-        .fetch(&pool);
+        let application = self.app.try_state::<ApplicationPlugin>().context("Failed to get application plugin")?;
 
-        while let Some((date, count)) = rows.try_next().await? {
-            hits
-                .entry(date.clone())
-                .and_modify(|h| {
-                    h.count += count;
-                    h.application_title_count = Some(count);
-                })
-                .or_insert_with(|| {
-                    let mut h = HitsPerDay::default();
-                    h.date = date;
-                    h.count = count;
-                    h.application_title_count = Some(count);
-                    h
-                });
+        let application_title_hits = application.search_for_title(&pool, &query).await?;
+        for (k, v) in application_title_hits {
+            if hits.contains_key(&k) {
+                let h = hits.get_mut(&k).unwrap();
+                h.count += v.count;
+                h.application_title_count = v.application_title_count;
+                h.application_title_hits = v.application_title_hits;
+            } else {
+                hits.insert(k, v);
+            }
         }
 
-        // application name
-        let mut rows = sqlx::query_as::<_, (
-            String, i64,
-        )>(
-            r#"
-            SELECT
-            e.date, COUNT(e.id) AS count
-            FROM event_log e
-            INNER JOIN application_log a
-                ON e.kind = ?
-                AND e.id = a.event_id
-            INNER JOIN application_info i
-                ON a.info_id = i.id
-                AND i.name LIKE ?
-            GROUP BY e.date
-            ORDER BY e.date
-            "#
-        )
-        .bind(application::KIND)
-        .bind(&query)
-        .fetch(&pool);
-
-        while let Some((date, count)) = rows.try_next().await? {
-            hits
-                .entry(date.clone())
-                .and_modify(|h| {
-                    h.count += count;
-                    h.application_name_count = Some(count);
-                })
-                .or_insert_with(|| {
-                    let mut h = HitsPerDay::default();
-                    h.date = date;
-                    h.count = count;
-                    h.application_name_count = Some(count);
-                    h
-                });
+        let application_name_hits = application.search_for_name(&pool, &query).await?;
+        for (k, v) in application_name_hits {
+            if hits.contains_key(&k) {
+                let h = hits.get_mut(&k).unwrap();
+                h.count += v.count;
+                h.application_name_count = v.application_name_count;
+                h.application_name_hits = v.application_name_hits;
+            } else {
+                hits.insert(k, v);
+            }
         }
 
-        // browser title
-        let mut rows = sqlx::query_as::<_, (
-            String, i64,
-        )>(
-            r#"
-            SELECT
-            e.date, COUNT(e.id) AS count
-            FROM event_log e
-            INNER JOIN browser_log b
-                ON e.kind = ?
-                AND e.id = b.event_id
-                AND b.title LIKE ?
-            GROUP BY e.date
-            ORDER BY e.date
-            "#
-        )
-        .bind(browser::KIND)
-        .bind(&query)
-        .fetch(&pool);
+        let browser = self.app.try_state::<BrowserPlugin>().context("Failed to get browser plugin")?;
 
-        while let Some((date, count)) = rows.try_next().await? {
-            hits
-                .entry(date.clone())
-                .and_modify(|h| {
-                    h.count += count;
-                    h.browser_title_count = Some(count);
-                })
-                .or_insert_with(|| {
-                    let mut h = HitsPerDay::default();
-                    h.date = date;
-                    h.count = count;
-                    h.browser_title_count = Some(count);
-                    h
-                });
+        let browser_title_hits = browser.search_for_title(&pool, &query).await?;
+        for (k, v) in browser_title_hits {
+            if hits.contains_key(&k) {
+                let h = hits.get_mut(&k).unwrap();
+                h.count += v.count;
+                h.browser_title_count = v.browser_title_count;
+                h.browser_title_hits = v.browser_title_hits;
+            } else {
+                hits.insert(k, v);
+            }
         }
 
-        // browser url
-        let mut rows = sqlx::query_as::<_, (
-            String, i64,
-        )>(
-            r#"
-            SELECT
-            e.date, COUNT(e.id) AS count
-            FROM event_log e
-            INNER JOIN browser_log b
-                ON e.kind = ?
-                AND e.id = b.event_id
-            INNER JOIN browser_url u
-                ON b.url_id = u.id
-                AND u.url LIKE ?
-            GROUP BY e.date
-            ORDER BY e.date
-            "#
-        )
-        .bind(browser::KIND)
-        .bind(&query)
-        .fetch(&pool);
-
-        while let Some((date, count)) = rows.try_next().await? {
-            hits
-                .entry(date.clone())
-                .and_modify(|h| {
-                    h.count += count;
-                    h.browser_url_count = Some(count);
-                })
-                .or_insert_with(|| {
-                    let mut h = HitsPerDay::default();
-                    h.date = date;
-                    h.count = count;
-                    h.browser_url_count = Some(count);
-                    h
-                });
+        let browser_url_hits = browser.search_for_url(&pool, &query).await?;
+        for (k, v) in browser_url_hits {
+            if hits.contains_key(&k) {
+                let h = hits.get_mut(&k).unwrap();
+                h.count += v.count;
+                h.browser_url_count = v.browser_url_count;
+                h.browser_url_hits = v.browser_url_hits;
+            } else {
+                hits.insert(k, v);
+            }
         }
 
-        // file path
-        let mut rows = sqlx::query_as::<_, (
-            String, i64,
-        )>(
-            r#"
-            SELECT
-            e.date, COUNT(e.id) AS count
-            FROM event_log e
-            INNER JOIN file_log f
-                ON e.kind = ?
-                AND e.id = f.event_id
-            INNER JOIN file_info i
-                ON f.info_id = i.id
-                AND i.path LIKE ?
-            GROUP BY e.date
-            ORDER BY e.date
-            "#
-        )
-        .bind(filelog::KIND)
-        .bind(&query)
-        .fetch(&pool);
+        let filelog = self.app.try_state::<FilelogPlugin>().context("Failed to get filelog plugin")?;
 
-        while let Some((date, count)) = rows.try_next().await? {
-            hits
-                .entry(date.clone())
-                .and_modify(|h| {
-                    h.count += count;
-                    h.file_path_count = Some(count);
-                })
-                .or_insert_with(|| {
-                    let mut h = HitsPerDay::default();
-                    h.date = date;
-                    h.count = count;
-                    h.file_path_count = Some(count);
-                    h
-                });
+        let file_path_hits = filelog.search_for_path(&pool, &query).await?;
+        for (k, v) in file_path_hits {
+            if hits.contains_key(&k) {
+                let h = hits.get_mut(&k).unwrap();
+                h.count += v.count;
+                h.file_path_count = v.file_path_count;
+                h.file_path_hits = v.file_path_hits;
+            } else {
+                hits.insert(k, v);
+            }
         }
 
         let mut hits: Vec<HitsPerDay> = hits
@@ -268,6 +148,7 @@ impl SearchPlugin {
             .map(|(_date, h)| h)
             .collect();
         hits.sort_by(|a, b| a.date.cmp(&b.date).reverse());
+
         Ok(SearchLogsResult { hits })
     }
 }
@@ -277,7 +158,7 @@ pub async fn search_logs(browser: State<'_, SearchPlugin>, query: String) -> Res
     browser.search_logs(&query).await.map_err(|e| e.to_string())
 }
 
-fn tokenize_query(query: &str) -> Vec<&str> {
+pub fn tokenize_query(query: &str) -> Vec<&str> {
     query.unicode_words().collect::<Vec<&str>>()
 }
 

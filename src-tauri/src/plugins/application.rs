@@ -215,7 +215,7 @@ impl ApplicationPlugin {
         let result = self.insert_application_log(application_log).await?;
 
         // search for title
-        let hits = self.search_for_title(&result).await?;
+        let hits = self.search_log_for_title(&result).await?;
 
         // send event
         let event = ImmicEvent::Application(result.clone(), hits);
@@ -427,7 +427,111 @@ impl ApplicationPlugin {
     //     }
     // }
 
-    pub async fn search_for_title(&self, log: &ApplicationLog) -> Result<Vec<HitsPerDay>> {
+    pub async fn search_for_title(&self, pool: &Pool<Sqlite>, query: &str) -> Result<HashMap<String, HitsPerDay>> {
+        let mut rows = sqlx::query_as::<_, (
+            i64, String,
+            i64, String,
+        )>(
+            r#"
+            SELECT
+                a.id, a.title,
+                e.timestamp, e.date
+            FROM application_log a
+            INNER JOIN event_log e
+                ON a.event_id = e.id
+                AND a.title LIKE ?
+            ORDER BY e.timestamp
+            "#
+        )
+        .bind(query)
+        .fetch(pool);
+
+        let mut hits: HashMap<String, HitsPerDay> = HashMap::new();
+        while let Some((id, title, timestamp, date)) = rows.try_next().await? {
+            hits.entry(date.clone())
+                .and_modify(|h| {
+                    h.count += 1;
+                    h.application_title_count = h.application_title_count.map(|c| c + 1);
+                    h.application_title_hits.as_mut().map(|hits| {
+                        hits.push(SearchHit {
+                            id,
+                            timestamp,
+                            text: Some(title.clone()),
+                        });
+                    });
+                })
+                .or_insert_with(|| {
+                    let mut h = HitsPerDay::default();
+                    h.date = date;
+                    h.count = 1;
+                    h.application_title_count = Some(1);
+                    h.application_title_hits = Some(vec![SearchHit {
+                        id,
+                        timestamp,
+                        text: Some(title),
+                    }]);
+                    h
+                });
+        }
+
+        Ok(hits)
+    }
+
+    pub async fn search_for_name(&self, pool: &Pool<Sqlite>, query: &str) -> Result<HashMap<String, HitsPerDay>> {
+        let mut rows = sqlx::query_as::<_, (
+            i64,
+            String,
+            i64, String,
+        )>(
+            r#"
+            SELECT
+                a.id,
+                i.name,
+                e.timestamp, e.date
+            FROM application_log a
+            INNER JOIN application_info i
+                ON a.info_id = i.id
+                AND i.name LIKE ?
+            INNER JOIN event_log e
+                ON a.event_id = e.id
+            ORDER BY e.timestamp
+            "#
+        )
+        .bind(query)
+        .fetch(pool);
+
+        let mut hits: HashMap<String, HitsPerDay> = HashMap::new();
+        while let Some((id, name, timestamp, date)) = rows.try_next().await? {
+            hits.entry(date.clone())
+                .and_modify(|h| {
+                    h.count += 1;
+                    h.application_name_count = h.application_name_count.map(|c| c + 1);
+                    h.application_name_hits.as_mut().map(|hits| {
+                        hits.push(SearchHit {
+                            id,
+                            timestamp,
+                            text: Some(name.clone()),
+                        });
+                    });
+                })
+                .or_insert_with(|| {
+                    let mut h = HitsPerDay::default();
+                    h.date = date;
+                    h.count = 1;
+                    h.application_name_count = Some(1);
+                    h.application_name_hits = Some(vec![SearchHit {
+                        id,
+                        timestamp,
+                        text: Some(name),
+                    }]);
+                    h
+                });
+        }
+
+        Ok(hits)
+    }
+
+    pub async fn search_log_for_title(&self, log: &ApplicationLog) -> Result<Vec<HitsPerDay>> {
         let db = self.app.state::<db::ImmicDb>();
         let pool = db.pool().await?;
 
@@ -461,6 +565,7 @@ impl ApplicationPlugin {
                         hits.push(SearchHit {
                             id,
                             timestamp,
+                            text: None,
                         });
                     });
                 })
@@ -472,6 +577,7 @@ impl ApplicationPlugin {
                     h.application_title_hits = Some(vec![SearchHit {
                         id,
                         timestamp,
+                        text: None,
                     }]);
                     h
                 });

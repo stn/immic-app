@@ -103,7 +103,7 @@ impl BrowserPlugin {
         let result = self.insert_browser_log(log).await?;
 
         // search for the result
-        let hits = self.search_for(&result).await?;
+        let hits = self.search_log_for(&result).await?;
 
         // send an event
         let event = ImmicEvent::Browser(result.clone(), hits);
@@ -463,7 +463,111 @@ impl BrowserPlugin {
     //     }
     // }
 
-    pub async fn search_for(&self, log: &BrowserLog) -> Result<Vec<HitsPerDay>> {
+    pub async fn search_for_title(&self, pool: &Pool<Sqlite>, query: &str) -> Result<HashMap<String, HitsPerDay>> {
+        let mut rows = sqlx::query_as::<_, (
+            i64, String,
+            i64, String,
+        )>(
+            r#"
+            SELECT
+                b.id, b.title,
+                e.timestamp, e.date
+            FROM browser_log b
+            INNER JOIN event_log e
+                ON b.event_id = e.id
+                AND b.title LIKE ?
+            ORDER BY e.timestamp
+            "#
+        )
+        .bind(query)
+        .fetch(pool);
+
+        let mut hits: HashMap<String, HitsPerDay> = HashMap::new();
+        while let Some((id, title, timestamp, date)) = rows.try_next().await? {
+            hits.entry(date.clone())
+                .and_modify(|h| {
+                    h.count += 1;
+                    h.browser_title_count = h.browser_title_count.map(|c| c + 1);
+                    h.browser_title_hits.as_mut().map(|hits| {
+                        hits.push(SearchHit {
+                            id,
+                            timestamp,
+                            text: Some(title.clone()),
+                        });
+                    });
+                })
+                .or_insert_with(|| {
+                    let mut h = HitsPerDay::default();
+                    h.date = date;
+                    h.count = 1;
+                    h.browser_title_count = Some(1);
+                    h.browser_title_hits = Some(vec![SearchHit {
+                        id,
+                        timestamp,
+                        text: Some(title),
+                    }]);
+                    h
+                });
+        }
+
+        Ok(hits)
+    }
+
+    pub async fn search_for_url(&self, pool: &Pool<Sqlite>, query: &str) -> Result<HashMap<String, HitsPerDay>> {
+        let mut rows = sqlx::query_as::<_, (
+            i64,
+            String,
+            i64, String,
+        )>(
+            r#"
+            SELECT
+                b.id,
+                u.url,
+                e.timestamp, e.date
+            FROM browser_log b
+            INNER JOIN browser_url u
+                ON b.url_id = u.id
+                AND u.url LIKE ?
+            INNER JOIN event_log e
+                ON b.event_id = e.id
+            ORDER BY e.timestamp
+            "#
+        )
+        .bind(query)
+        .fetch(pool);
+
+        let mut hits: HashMap<String, HitsPerDay> = HashMap::new();
+        while let Some((id, url, timestamp, date)) = rows.try_next().await? {
+            hits.entry(date.clone())
+                .and_modify(|h| {
+                    h.count += 1;
+                    h.browser_url_count = h.browser_url_count.map(|c| c + 1);
+                    h.browser_url_hits.as_mut().map(|hits| {
+                        hits.push(SearchHit {
+                            id,
+                            timestamp,
+                            text: Some(url.clone()),
+                        });
+                    });
+                })
+                .or_insert_with(|| {
+                    let mut h = HitsPerDay::default();
+                    h.date = date;
+                    h.count = 1;
+                    h.browser_url_count = Some(1);
+                    h.browser_url_hits = Some(vec![SearchHit {
+                        id,
+                        timestamp,
+                        text: Some(url),
+                    }]);
+                    h
+                });
+        }
+
+        Ok(hits)
+    }
+
+    pub async fn search_log_for(&self, log: &BrowserLog) -> Result<Vec<HitsPerDay>> {
         let db = self.app.state::<db::ImmicDb>();
         let pool = db.pool().await?;
 
@@ -495,6 +599,7 @@ impl BrowserPlugin {
                         hits.push(SearchHit {
                             id,
                             timestamp,
+                            text: None,
                         });
                     });
                 })
@@ -506,6 +611,7 @@ impl BrowserPlugin {
                     h.browser_url_hits = Some(vec![SearchHit {
                         id,
                         timestamp,
+                        text: None,
                     }]);
                     h
                 });
