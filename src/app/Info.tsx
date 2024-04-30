@@ -15,7 +15,7 @@ import { ApplicationLogItem } from "@/components/elements/ApplicationLogItem";
 import { BrowserLogItem } from "@/components/elements/BrowserLogItem";
 import { FileLogItem } from "@/components/elements/FilelogItem";
 
-import { HitsPerDay, SearchHit } from "@/lib/api";
+import { HitsPerDay, SearchHit, openHourly } from "@/lib/api";
 import { ImmicEvent, useTauriEvent } from "@/lib/immic-events";
 import { timestamp_hhmm, timestamp_yyyymmss } from "@/lib/utils";
 
@@ -82,7 +82,11 @@ function HitsPerDays({ hitsPerDays, item }: { hitsPerDays: HitsPerDay[], item: k
           </AccordionTrigger>
           <AccordionContent className="pl-4 flex flex-wrap">
             {(hitsPerDay[item] as SearchHit[]).map((hit: { timestamp: number; }, i: number) => (
-              <Label key={i} className="ml-2 mt-1">
+              <Label
+                key={i}
+                className="ml-2 mt-1"
+                onClick={async () => {await openHourly(hit.timestamp)}}
+              >
                 {timestamp_hhmm(hit.timestamp)}
               </Label>
             ))}

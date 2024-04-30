@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { Link, useParams, useLocation } from "react-router-dom";
 
 import {
   image_url,
@@ -20,6 +20,7 @@ import { ApplicationLogItem } from "@/components/elements/ApplicationLogItem";
 
 function HourlyPage() {
   const params = useParams();
+  const { hash } = useLocation();
 
   const [timeline, setTimeline] = useState<[string, [ScreenshotLog[], ApplicationLog[], BrowserLog[], FileLog[]]][]>();
   const [timestamp, setTimestamp] = useState<number>();
@@ -57,7 +58,14 @@ function HourlyPage() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [params]);
+
+  useLayoutEffect(() => {
+    if (hash) {
+      const elem = document.getElementById(hash.slice(1));
+      elem?.scrollIntoView({ block: "center", behavior: "smooth" })
+    }
+  }, [timeline, hash]);
 
   return (
     <div
@@ -98,7 +106,7 @@ function HourlyPage() {
                     className="flex gap-6 hover:bg-transparent/80"
                     onMouseEnter={() => setTimeframe(timeframe, screens)}
                   >
-                    <div className="flex-none w-4">
+                    <div id={`t${timeframe}`} className="flex-none w-4">
                       {("0" + (timeframe % 60)).slice(-2)}
                     </div>
                     <div className="flex-auto w-96">

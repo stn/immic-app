@@ -32,6 +32,10 @@ export async function showMain(): Promise<void> {
   await invoke("show_main_cmd");
 }
 
+export async function openHourly(timestamp: number): Promise<void> {
+  await invoke("open_hourly_cmd", { timestamp });
+}
+
 export async function listDates(): Promise<string[]> {
   return await invoke("plugin:immicdb|list_eventlog_dates");
 }
