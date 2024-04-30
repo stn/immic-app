@@ -465,12 +465,12 @@ impl BrowserPlugin {
 
     pub async fn search_for_title(&self, pool: &Pool<Sqlite>, query: &str) -> Result<HashMap<String, HitsPerDay>> {
         let mut rows = sqlx::query_as::<_, (
-            i64,
+            i64, String,
             i64, String,
         )>(
             r#"
             SELECT
-                b.id,
+                b.id, b.title,
                 e.timestamp, e.date
             FROM browser_log b
             INNER JOIN event_log e
@@ -483,7 +483,7 @@ impl BrowserPlugin {
         .fetch(pool);
 
         let mut hits: HashMap<String, HitsPerDay> = HashMap::new();
-        while let Some((id, timestamp, date)) = rows.try_next().await? {
+        while let Some((id, title, timestamp, date)) = rows.try_next().await? {
             hits.entry(date.clone())
                 .and_modify(|h| {
                     h.count += 1;
@@ -492,6 +492,7 @@ impl BrowserPlugin {
                         hits.push(SearchHit {
                             id,
                             timestamp,
+                            text: Some(title.clone()),
                         });
                     });
                 })
@@ -503,6 +504,7 @@ impl BrowserPlugin {
                     h.browser_title_hits = Some(vec![SearchHit {
                         id,
                         timestamp,
+                        text: Some(title),
                     }]);
                     h
                 });
@@ -514,11 +516,13 @@ impl BrowserPlugin {
     pub async fn search_for_url(&self, pool: &Pool<Sqlite>, query: &str) -> Result<HashMap<String, HitsPerDay>> {
         let mut rows = sqlx::query_as::<_, (
             i64,
+            String,
             i64, String,
         )>(
             r#"
             SELECT
                 b.id,
+                u.url,
                 e.timestamp, e.date
             FROM browser_log b
             INNER JOIN browser_url u
@@ -533,7 +537,7 @@ impl BrowserPlugin {
         .fetch(pool);
 
         let mut hits: HashMap<String, HitsPerDay> = HashMap::new();
-        while let Some((id, timestamp, date)) = rows.try_next().await? {
+        while let Some((id, url, timestamp, date)) = rows.try_next().await? {
             hits.entry(date.clone())
                 .and_modify(|h| {
                     h.count += 1;
@@ -542,6 +546,7 @@ impl BrowserPlugin {
                         hits.push(SearchHit {
                             id,
                             timestamp,
+                            text: Some(url.clone()),
                         });
                     });
                 })
@@ -553,6 +558,7 @@ impl BrowserPlugin {
                     h.browser_url_hits = Some(vec![SearchHit {
                         id,
                         timestamp,
+                        text: Some(url),
                     }]);
                     h
                 });
@@ -593,6 +599,7 @@ impl BrowserPlugin {
                         hits.push(SearchHit {
                             id,
                             timestamp,
+                            text: None,
                         });
                     });
                 })
@@ -604,6 +611,7 @@ impl BrowserPlugin {
                     h.browser_url_hits = Some(vec![SearchHit {
                         id,
                         timestamp,
+                        text: None,
                     }]);
                     h
                 });

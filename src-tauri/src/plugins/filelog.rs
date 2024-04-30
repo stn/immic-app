@@ -533,11 +533,13 @@ impl FilelogPlugin {
     pub async fn search_for_path(&self, pool: &Pool<Sqlite>, query: &str) -> Result<HashMap<String, HitsPerDay>> {
         let mut rows = sqlx::query_as::<_, (
             i64,
+            String,
             i64, String
         )>(
             r#"
             SELECT
                 f.id,
+                i.path,
                 e.timestamp, e.date
             FROM file_log f
             INNER JOIN file_info i
@@ -552,7 +554,7 @@ impl FilelogPlugin {
         .fetch(pool);
 
         let mut hits: HashMap<String, HitsPerDay> = HashMap::new();
-        while let Some((id, timestamp, date)) = rows.try_next().await? {
+        while let Some((id, path, timestamp, date)) = rows.try_next().await? {
             hits.entry(date.clone())
                 .and_modify(|h| {
                     h.count += 1;
@@ -561,6 +563,7 @@ impl FilelogPlugin {
                         hits.push(SearchHit {
                             id,
                             timestamp,
+                            text: Some(path.clone()),
                         });
                     });
                 })
@@ -572,6 +575,7 @@ impl FilelogPlugin {
                     h.file_path_hits = Some(vec![SearchHit {
                         id,
                         timestamp,
+                        text: Some(path),
                     }]);
                     h
                 });
@@ -611,6 +615,7 @@ impl FilelogPlugin {
                         hits.push(SearchHit {
                             id,
                             timestamp,
+                            text: None,
                         });
                     });
                 })
@@ -622,6 +627,7 @@ impl FilelogPlugin {
                     h.file_path_hits = Some(vec![SearchHit {
                         id,
                         timestamp,
+                        text: None,
                     }]);
                     h
                 });

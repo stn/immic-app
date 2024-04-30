@@ -70,6 +70,7 @@ export type HitsPerDay = {
 export type SearchHit = {
   id: number;
   timestamp: number;
+  text: string;
 }
 
 export async function searchLogs(query: string): Promise<SearchLogsResults> {

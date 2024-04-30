@@ -429,12 +429,12 @@ impl ApplicationPlugin {
 
     pub async fn search_for_title(&self, pool: &Pool<Sqlite>, query: &str) -> Result<HashMap<String, HitsPerDay>> {
         let mut rows = sqlx::query_as::<_, (
-            i64,
+            i64, String,
             i64, String,
         )>(
             r#"
             SELECT
-                a.id,
+                a.id, a.title,
                 e.timestamp, e.date
             FROM application_log a
             INNER JOIN event_log e
@@ -447,7 +447,7 @@ impl ApplicationPlugin {
         .fetch(pool);
 
         let mut hits: HashMap<String, HitsPerDay> = HashMap::new();
-        while let Some((id, timestamp, date)) = rows.try_next().await? {
+        while let Some((id, title, timestamp, date)) = rows.try_next().await? {
             hits.entry(date.clone())
                 .and_modify(|h| {
                     h.count += 1;
@@ -456,6 +456,7 @@ impl ApplicationPlugin {
                         hits.push(SearchHit {
                             id,
                             timestamp,
+                            text: Some(title.clone()),
                         });
                     });
                 })
@@ -467,16 +468,11 @@ impl ApplicationPlugin {
                     h.application_title_hits = Some(vec![SearchHit {
                         id,
                         timestamp,
+                        text: Some(title),
                     }]);
                     h
                 });
         }
-
-        // let mut hits: Vec<HitsPerDay> = hits
-        //     .into_iter()
-        //     .map(|(_date, h)| h)
-        //     .collect();
-        // hits.sort_by(|a, b| a.date.cmp(&b.date).reverse());
 
         Ok(hits)
     }
@@ -484,11 +480,13 @@ impl ApplicationPlugin {
     pub async fn search_for_name(&self, pool: &Pool<Sqlite>, query: &str) -> Result<HashMap<String, HitsPerDay>> {
         let mut rows = sqlx::query_as::<_, (
             i64,
+            String,
             i64, String,
         )>(
             r#"
             SELECT
                 a.id,
+                i.name,
                 e.timestamp, e.date
             FROM application_log a
             INNER JOIN application_info i
@@ -503,7 +501,7 @@ impl ApplicationPlugin {
         .fetch(pool);
 
         let mut hits: HashMap<String, HitsPerDay> = HashMap::new();
-        while let Some((id, timestamp, date)) = rows.try_next().await? {
+        while let Some((id, name, timestamp, date)) = rows.try_next().await? {
             hits.entry(date.clone())
                 .and_modify(|h| {
                     h.count += 1;
@@ -512,6 +510,7 @@ impl ApplicationPlugin {
                         hits.push(SearchHit {
                             id,
                             timestamp,
+                            text: Some(name.clone()),
                         });
                     });
                 })
@@ -523,16 +522,11 @@ impl ApplicationPlugin {
                     h.application_name_hits = Some(vec![SearchHit {
                         id,
                         timestamp,
+                        text: Some(name),
                     }]);
                     h
                 });
         }
-
-        // let mut hits: Vec<HitsPerDay> = hits
-        //     .into_iter()
-        //     .map(|(_date, h)| h)
-        //     .collect();
-        // hits.sort_by(|a, b| a.date.cmp(&b.date).reverse());
 
         Ok(hits)
     }
@@ -571,6 +565,7 @@ impl ApplicationPlugin {
                         hits.push(SearchHit {
                             id,
                             timestamp,
+                            text: None,
                         });
                     });
                 })
@@ -582,6 +577,7 @@ impl ApplicationPlugin {
                     h.application_title_hits = Some(vec![SearchHit {
                         id,
                         timestamp,
+                        text: None,
                     }]);
                     h
                 });

@@ -40,6 +40,7 @@ pub struct HitsPerDay {
 pub struct SearchHit {
     pub timestamp: i64,
     pub id: i64,
+    pub text: Option<String>,
 }
 
 pub fn init() -> TauriPlugin<Wry> {
