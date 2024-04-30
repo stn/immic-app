@@ -71,9 +71,9 @@ function MainPanel() {
 
   useEffect(() => {
     if (event?.OpenHourly) {
-      console.log(event);
       const [year, month, day] = timestamp_yyyymmdd(event.OpenHourly);
-      navigate(`/${year}/${month}/${day}`);
+      const timeframe = Math.floor(event.OpenHourly / 60);
+      navigate(`/${year}/${month}/${day}#t${timeframe}`);
     }
   }, [event]);
 
@@ -109,12 +109,9 @@ function MainPanel() {
 }
 
 function timestamp_yyyymmdd(timestamp: number): [string, string, string] {
-  const d = new Date(timestamp * 1000);
-  return [
-    d.getFullYear().toString(),
-    (d.getMonth() + 1).toString().padStart(2, "0"),
-    d.getDate().toString().padStart(2, "0")
-  ];
+  let date = new Date(timestamp * 1000);
+  const [year, month, day] = date.toLocaleDateString("ja-JP", {year: "numeric",month: "2-digit", day: "2-digit"}).split("/");
+  return [year, month, day];
 }
 
 export default MainPanel;
