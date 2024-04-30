@@ -274,7 +274,7 @@ impl FilelogPlugin {
         let result = self.insert_file_log(log).await?;
 
         // search for hits
-        let hits = self.search_for(&result).await?;
+        let hits = self.search_log_for(&result).await?;
 
         // send event
         let event = ImmicEvent::File(result.clone(), hits);
@@ -530,7 +530,56 @@ impl FilelogPlugin {
     //     }
     // }
 
-    pub async fn search_for(&self, log: &FileLog) -> Result<Vec<HitsPerDay>> {
+    pub async fn search_for_path(&self, pool: &Pool<Sqlite>, query: &str) -> Result<HashMap<String, HitsPerDay>> {
+        let mut rows = sqlx::query_as::<_, (
+            i64,
+            i64, String
+        )>(
+            r#"
+            SELECT
+                f.id,
+                e.timestamp, e.date
+            FROM file_log f
+            INNER JOIN file_info i
+                ON f.info_id = i.id
+                AND i.path LIKE ?
+            INNER JOIN event_log e
+                ON f.event_id = e.id
+            ORDER BY e.timestamp
+            "#
+        )
+        .bind(query)
+        .fetch(pool);
+
+        let mut hits: HashMap<String, HitsPerDay> = HashMap::new();
+        while let Some((id, timestamp, date)) = rows.try_next().await? {
+            hits.entry(date.clone())
+                .and_modify(|h| {
+                    h.count += 1;
+                    h.file_path_count = h.file_path_count.map(|c| c + 1);
+                    h.file_path_hits.as_mut().map(|hits| {
+                        hits.push(SearchHit {
+                            id,
+                            timestamp,
+                        });
+                    });
+                })
+                .or_insert_with(|| {
+                    let mut h = HitsPerDay::default();
+                    h.date = date;
+                    h.count = 1;
+                    h.file_path_count = Some(1);
+                    h.file_path_hits = Some(vec![SearchHit {
+                        id,
+                        timestamp,
+                    }]);
+                    h
+                });
+        }
+
+        Ok(hits)
+    }
+    pub async fn search_log_for(&self, log: &FileLog) -> Result<Vec<HitsPerDay>> {
         let db = self.app.state::<db::ImmicDb>();
         let pool = db.pool().await?;
 
