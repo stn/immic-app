@@ -4,7 +4,7 @@ use actix_web::{
     http, middleware, web,
     App, HttpServer,
 };
-use anyhow::{Context as _, Result};
+use anyhow::{anyhow, Context as _, Result};
 use chrono::DateTime;
 use futures::TryStreamExt;
 use log::{debug, error};
@@ -608,8 +608,12 @@ fn parse_url(url: &str) -> Result<(String, String, Option<String>)> {
         s if s.is_empty() => None,
         s => Some(s.to_string()),
     };
+
+    // actually this is not origin but we don't want to keep username and password parts.
+    let origin = parsed.host_str().ok_or_else(|| anyhow!("Invalid url"))?;
+
     Ok((
-        parsed[..url::Position::AfterPort].to_string(),
+        origin.to_string(),
         parsed[..url::Position::AfterPath].to_string(),
         query,
     ))
