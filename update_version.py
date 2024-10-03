@@ -1,7 +1,8 @@
-import sys
+from pathlib import Path
+import platform
 import re
 import subprocess
-from pathlib import Path
+import sys
 
 
 def update_version(file_path, new_version):
@@ -20,7 +21,10 @@ def update_version(file_path, new_version):
 
 
 def test_build():
-    subprocess.run(["pnpm", "tauri", "build", "-c", "src-tauri/tauri.conf.build.json"], check=True)
+    if platform.system() == "Windows":
+        subprocess.run(["powershell.exe", "-Command", "pnpm tauri build -c src-tauri/tauri.conf.build.json"], check=True)
+    else:
+        subprocess.run(["pnpm", "tauri", "build", "-c", "src-tauri/tauri.conf.build.json"], check=True)
     subprocess.run(["git", "add", "pnpm-lock.yaml"], check=True)
     subprocess.run(["git", "add", "src-tauri/Cargo.lock"], check=True)
     print("Build has been tested.")
